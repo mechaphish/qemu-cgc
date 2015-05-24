@@ -58,23 +58,6 @@ struct image_info {
 #endif
 };
 
-#ifdef TARGET_I386
-/* Information about the current linux thread */
-struct vm86_saved_state {
-    uint32_t eax; /* return code */
-    uint32_t ebx;
-    uint32_t ecx;
-    uint32_t edx;
-    uint32_t esi;
-    uint32_t edi;
-    uint32_t ebp;
-    uint32_t esp;
-    uint32_t eflags;
-    uint32_t eip;
-    uint16_t cs, ss, ds, es, fs, gs;
-};
-#endif
-
 #if defined(TARGET_ARM) && defined(TARGET_ABI32)
 /* FPU emulator */
 #include "nwfpe/fpa11.h"
@@ -87,6 +70,7 @@ struct sigqueue {
     target_siginfo_t info;
 };
 
+
 struct emulated_sigtable {
     int pending; /* true if signal is pending */
     struct sigqueue *first;
@@ -94,37 +78,12 @@ struct emulated_sigtable {
                              first signal, we put it here */
 };
 
+
 /* NOTE: we force a big alignment so that the stack stored after is
    aligned too */
 typedef struct TaskState {
     pid_t ts_tid;     /* tid (or pid) of this task */
-#ifdef TARGET_ARM
-# ifdef TARGET_ABI32
-    /* FPA state */
-    FPA11 fpa;
-# endif
-    int swi_errno;
-#endif
-#ifdef TARGET_UNICORE32
-    int swi_errno;
-#endif
-#if defined(TARGET_I386) && !defined(TARGET_X86_64)
-    abi_ulong target_v86;
-    struct vm86_saved_state vm86_saved_regs;
-    struct target_vm86plus_struct vm86plus;
-    uint32_t v86flags;
-    uint32_t v86mask;
-#endif
     abi_ulong child_tidptr;
-#ifdef TARGET_M68K
-    int sim_syscalls;
-    abi_ulong tp_value;
-#endif
-#if defined(TARGET_ARM) || defined(TARGET_M68K) || defined(TARGET_UNICORE32)
-    /* Extra fields for semihosted binaries.  */
-    uint32_t heap_base;
-    uint32_t heap_limit;
-#endif
     uint32_t stack_base;
     int used; /* non zero if used */
     bool sigsegv_blocked; /* SIGSEGV blocked by guest */
@@ -181,12 +140,11 @@ int loader_exec(int fdexec, const char *filename, char **argv, char **envp,
              struct linux_binprm *);
 
 int load_elf_binary(struct linux_binprm *bprm, struct image_info *info);
-int load_flt_binary(struct linux_binprm *bprm, struct image_info *info);
 
 abi_long memcpy_to_target(abi_ulong dest, const void *src,
                           unsigned long len);
-void target_set_brk(abi_ulong new_brk);
-abi_long do_brk(abi_ulong new_brk);
+//void target_set_brk(abi_ulong new_brk);
+//abi_long do_brk(abi_ulong new_brk);
 void syscall_init(void);
 abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
                     abi_long arg2, abi_long arg3, abi_long arg4,
@@ -239,17 +197,6 @@ long do_rt_sigreturn(CPUArchState *env);
 abi_long do_sigaltstack(abi_ulong uss_addr, abi_ulong uoss_addr, abi_ulong sp);
 int do_sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
 
-#ifdef TARGET_I386
-/* vm86.c */
-void save_v86_state(CPUX86State *env);
-void handle_vm86_trap(CPUX86State *env, int trapno);
-void handle_vm86_fault(CPUX86State *env);
-int do_vm86(CPUX86State *env, long subfunction, abi_ulong v86_addr);
-#elif defined(TARGET_SPARC64)
-void sparc64_set_context(CPUSPARCState *env);
-void sparc64_get_context(CPUSPARCState *env);
-#endif
-
 /* mmap.c */
 int target_mprotect(abi_ulong start, abi_ulong len, int prot);
 abi_long target_mmap(abi_ulong start, abi_ulong len, int prot,
@@ -259,7 +206,7 @@ abi_long target_mremap(abi_ulong old_addr, abi_ulong old_size,
                        abi_ulong new_size, unsigned long flags,
                        abi_ulong new_addr);
 int target_msync(abi_ulong start, abi_ulong len, int flags);
-extern unsigned long last_brk;
+//extern unsigned long last_brk;
 extern abi_ulong mmap_next_start;
 void mmap_lock(void);
 void mmap_unlock(void);
@@ -452,7 +399,5 @@ static inline void *lock_user_string(abi_ulong guest_addr)
  * above, so include them last.
  */
 #include "target_cpu.h"
-#include "target_signal.h"
-#include "target_structs.h"
 
 #endif /* QEMU_H */

@@ -289,7 +289,11 @@ static void parse_type_number(Visitor *v, double *obj, const char *name,
     errno = 0;
     if (siv->string) {
         val = strtod(siv->string, &endp);
+    } else {
+        fprintf(stderr, "qemu: The compiler complains if I don't check... and it was right!\n");
+        abort();
     }
+
     if (!siv->string || errno || endp == siv->string || *endp) {
         error_set(errp, QERR_INVALID_PARAMETER_TYPE, name ? name : "null",
                   "number");
