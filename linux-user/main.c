@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
+#include <err.h>
 #include <errno.h>
 #include <unistd.h>
 #include <sys/mman.h>
@@ -837,16 +838,17 @@ int main(int argc, char **argv, char **envp)
 
     /* CGC binaries have STICKY_TIMEOUTS and ADDR_NO_RANDOMIZE set by default,
      * but I rely on STICKY_TIMEOUTS to _not_ be set (I just don't copy the parameters back).
-     * The utility of ADDR_NO_RANDOMIZE is also somewhat questionable. */
+     * The utility of ADDR_NO_RANDOMIZE is also somewhat questionable, but I still take care of it. */
     unsigned long persona = (unsigned long) personality(0xffffffff);
     if ((persona & STICKY_TIMEOUTS) == STICKY_TIMEOUTS) {
         fprintf(stderr, "qemu: do NOT set STICKY_TIMEOUTS, I handle that myself and I use the default timeout modification.\n");
         exit(11);
     }
     if ((persona & ADDR_NO_RANDOMIZE) != ADDR_NO_RANDOMIZE) {
-        fprintf(stderr, "Warning: ADDR_NO_RANDOMIZE was not set at process start. I will set it now, but it's probably better to run me with setarch.\n\n");
         if (personality(persona | ADDR_NO_RANDOMIZE) == -1)
-            perror("Couldn't set ADDR_NO_RANDOMIZE!");
+            err(1, "Couldn't set ADDR_NO_RANDOMIZE!");
+        execv(argv[0], argv);
+        err(1, "Could not re-exec myself to disable ASLR! That's weird...");
     }
 
     module_call_init(MODULE_INIT_QOM);
