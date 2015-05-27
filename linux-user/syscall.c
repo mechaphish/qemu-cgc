@@ -1,10 +1,3 @@
-/* *** CGC TODO:
- *
- * - allow only int80
- * - autorestart
- *
- * */
-
 /*
  *  Linux syscalls
  *
@@ -408,7 +401,7 @@ _Static_assert(sizeof(abi_int) == 4, "abi_int is not 4 bytes!");
  *       (And unless DEBUG_REMAP is defined it's a no-op anyway.) */
 
 static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
-    int ret;
+    int ret = 0;
     void *p; abi_long *prx;
     if (p_rx_bytes != 0) {
         if (!(prx = lock_user(VERIFY_WRITE, p_rx_bytes, 4, 0)))
@@ -437,7 +430,7 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
 }
 
 static abi_long do_transmit(abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_tx_bytes) {
-    int ret;
+    int ret = 0;
     void *p; abi_long *ptx;
     if (p_tx_bytes != 0) {
         if (!(ptx = lock_user(VERIFY_WRITE, p_tx_bytes, 4, 0)))
