@@ -402,7 +402,7 @@ _Static_assert(sizeof(abi_int) == 4, "abi_int is not 4 bytes!");
 
 static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
     int ret = 0;
-    void *p; abi_long *prx;
+    abi_ulong *p; abi_long *prx;
     if (p_rx_bytes != 0) {
         if (!(prx = lock_user(VERIFY_WRITE, p_rx_bytes, 4, 0)))
             return TARGET_EFAULT;
@@ -431,7 +431,7 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
 
 static abi_long do_transmit(abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_tx_bytes) {
     int ret = 0;
-    void *p; abi_long *ptx;
+    abi_ulong *p; abi_long *ptx;
     if (p_tx_bytes != 0) {
         if (!(ptx = lock_user(VERIFY_WRITE, p_tx_bytes, 4, 0)))
             return TARGET_EFAULT;
@@ -465,7 +465,7 @@ static abi_long do_random(abi_ulong buf, abi_long count, abi_ulong p_rnd_out)
     size_t size, i;
     uint16_t randval;
     int ret;
-    abi_long *pout;
+    abi_ulong *pout;
     if (p_rnd_out != 0) {
         if (!(pout = lock_user(VERIFY_WRITE, p_rnd_out, 4, 0)))
             return TARGET_EFAULT;
@@ -498,7 +498,7 @@ static abi_long do_random(abi_ulong buf, abi_long count, abi_ulong p_rnd_out)
 static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
 {
     int prot = PROT_READ | PROT_WRITE;
-    void *p;
+    abi_ulong *p;
 
     if (exec)
         prot |= PROT_EXEC;
@@ -508,7 +508,7 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
             return TARGET_EFAULT;
     } else p = NULL; /* Believe it or not, binfmt_cgc allows this */
 
-    abi_long mmap_ret = target_mmap(0, len, prot, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    abi_ulong mmap_ret = target_mmap(0, len, prot, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     if (mmap_ret == -1)
         return get_errno(mmap_ret);
 
@@ -527,7 +527,7 @@ static abi_long do_fdwait(abi_int n, abi_ulong rfd_addr, abi_ulong wfd_addr, abi
     struct timeval tv, *tv_ptr;
     abi_long ret;
 
-    int *pready;
+    abi_ulong *pready;
     if (p_readyfds != 0) { /* Believe it or not, binfmt_cgc allows this */
         if (!(pready = lock_user(VERIFY_WRITE, p_readyfds, 4, 0)))
             return TARGET_EFAULT;

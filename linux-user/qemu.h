@@ -278,7 +278,7 @@ static inline int access_ok(int type, abi_ulong addr, abi_ulong size)
         __put_user((x), __hptr);				\
         unlock_user(__hptr, __gaddr, sizeof(target_type));		\
     } else								\
-        __ret = -TARGET_EFAULT;						\
+        __ret = TARGET_EFAULT;						\
     __ret;								\
 })
 
@@ -293,7 +293,7 @@ static inline int access_ok(int type, abi_ulong addr, abi_ulong size)
     } else {								\
         /* avoid warning */						\
         (x) = 0;							\
-        __ret = -TARGET_EFAULT;						\
+        __ret = TARGET_EFAULT;						\
     }									\
     __ret;								\
 })
@@ -372,7 +372,7 @@ static inline void unlock_user(void *host_ptr, abi_ulong guest_addr,
 #endif
 }
 
-/* Return the length of a string in target memory or -TARGET_EFAULT if
+/* Return the length of a string in target memory or TARGET_EFAULT if
    access error. */
 abi_long target_strlen(abi_ulong gaddr);
 
