@@ -110,14 +110,14 @@ print_syscall(int num,
         gemu_log("transmit(fd=%ld, ", (long) arg1);
         gemu_log("buf="); print_pointer(arg2, 0);
         print_raw_param("count=%d", arg3, 0);
-        gemu_log("tx_bytes="); print_pointer(arg4, 0); /* CGC TODO: print on return */
+        gemu_log("tx_bytes="); print_pointer(arg4, 1); /* CGC TODO: print on return */
         gemu_log(")");
         break;
     case TARGET_NR_receive:
         gemu_log("receive(fd=%ld, ", (long) arg1);
         gemu_log("buf="); print_pointer(arg2, 0); /* CGC TODO: print on return */
         print_raw_param("count=%d", arg3, 0);
-        gemu_log("rx_bytes="); print_pointer(arg4, 0); /* CGC TODO: print on return */
+        gemu_log("rx_bytes="); print_pointer(arg4, 1); /* CGC TODO: print on return */
         gemu_log(")");
         break;
     case TARGET_NR_fdwait:
@@ -131,7 +131,7 @@ print_syscall(int num,
     case TARGET_NR_allocate:
         gemu_log("allocate(");
         print_raw_param("length=%d", arg1, 0);
-        gemu_log(arg2 ? "rwX (EXECUTABLE)" : "rw"); qemu_log(", ");
+        gemu_log(arg2 ? "rwX (EXECUTABLE)" : "rw"); gemu_log(", ");
         print_pointer(arg3, 1); /* CGC TODO: print on return */
         gemu_log(")");
         break;
