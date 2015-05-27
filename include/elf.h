@@ -1435,6 +1435,12 @@ typedef struct elf64_shdr {
 #define	ELFMAG		"\177ELF"
 #define	SELFMAG		4
 
+#define	CGCMAG0		0x7f		/* EI_MAG */
+#define	CGCMAG1		'C'
+#define	CGCMAG2		'G'
+#define	CGCMAG3		'C'
+#define	CGCMAG		"\177CGC"
+
 #define	ELFCLASSNONE	0		/* EI_CLASS */
 #define	ELFCLASS32	1
 #define	ELFCLASS64	2

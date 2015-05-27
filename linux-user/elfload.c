@@ -1310,10 +1310,11 @@ static void load_symbols(struct elfhdr *hdr, int fd, abi_ulong load_bias);
    This can be performed before bswapping the entire header.  */
 static bool elf_check_ident(struct elfhdr *ehdr)
 {
-    return (ehdr->e_ident[EI_MAG0] == ELFMAG0
-            && ehdr->e_ident[EI_MAG1] == ELFMAG1
-            && ehdr->e_ident[EI_MAG2] == ELFMAG2
-            && ehdr->e_ident[EI_MAG3] == ELFMAG3
+    return (
+            (ehdr->e_ident[EI_MAG0] == ELFMAG0 || ehdr->e_ident[EI_MAG0] == CGCMAG0)
+            && (ehdr->e_ident[EI_MAG1] == ELFMAG1 || ehdr->e_ident[EI_MAG1] == CGCMAG1)
+            && (ehdr->e_ident[EI_MAG2] == ELFMAG2 || ehdr->e_ident[EI_MAG2] == CGCMAG2)
+            && (ehdr->e_ident[EI_MAG3] == ELFMAG3 || ehdr->e_ident[EI_MAG3] == CGCMAG3)
             && ehdr->e_ident[EI_CLASS] == ELF_CLASS
             && ehdr->e_ident[EI_DATA] == ELF_DATA
             && ehdr->e_ident[EI_VERSION] == EV_CURRENT);

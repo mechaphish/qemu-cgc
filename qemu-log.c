@@ -20,10 +20,14 @@
 #include "qemu-common.h"
 #include "qemu/log.h"
 
+#define MAX_LOG_ENTRIES 100
+#define CIRCULAR_BUFFER_SPLIT "==========SPLIT==========\n"
+
 static char *logfilename;
 FILE *qemu_logfile;
 int qemu_loglevel;
 static int log_append = 0;
+static unsigned int current_entry = 0;
 
 void qemu_log(const char *fmt, ...)
 {
@@ -32,6 +36,17 @@ void qemu_log(const char *fmt, ...)
     va_start(ap, fmt);
     if (qemu_logfile) {
         vfprintf(qemu_logfile, fmt, ap);
+
+        if (qemu_loglevel_mask(LOG_CIRCULAR_BUFFER)){
+            current_entry++;
+            if(current_entry > MAX_LOG_ENTRIES){
+                current_entry = 0;
+                ftruncate(fileno(qemu_logfile),(off_t)ftell(qemu_logfile));
+                fseek(qemu_logfile, 0, SEEK_SET);
+            }
+            fprintf(qemu_logfile, CIRCULAR_BUFFER_SPLIT);
+            fseek(qemu_logfile, -1*sizeof(CIRCULAR_BUFFER_SPLIT)+1, SEEK_CUR);
+        }
     }
     va_end(ap);
 }
@@ -91,6 +106,8 @@ void qemu_set_log_filename(const char *filename)
 }
 
 const QEMULogItem qemu_log_items[] = {
+    { LOG_CIRCULAR_BUFFER, "circular",
+      "log in a circular buffer" },
     { CPU_LOG_TB_OUT_ASM, "out_asm",
       "show generated host assembly code for each compiled TB" },
     { CPU_LOG_TB_IN_ASM, "in_asm",

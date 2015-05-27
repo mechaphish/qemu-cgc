@@ -150,9 +150,9 @@ int loader_exec(int fdexec, const char *filename, char **argv, char **envp,
 
     if(retval>=0) {
         if (bprm->buf[0] == 0x7f
-                && bprm->buf[1] == 'E'
-                && bprm->buf[2] == 'L'
-                && bprm->buf[3] == 'F') {
+                && (bprm->buf[1] == 'E' || bprm->buf[1] == 'C')
+                && (bprm->buf[2] == 'L' || bprm->buf[2] == 'G')
+                && (bprm->buf[3] == 'F' || bprm->buf[3] == 'C')) {
             retval = load_elf_binary(bprm, infop);
         } else {
             return -ENOEXEC;
