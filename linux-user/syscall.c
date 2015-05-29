@@ -416,7 +416,7 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
     if (count != 0) {
         do {
             ret = read(fd, p, count);
-        } while (ret == EINTR);
+        } while ((ret == -1) && (errno == EINTR));
         if (ret >= 0)
             unlock_user(p, buf, ret);
         else return get_errno(ret);
@@ -445,7 +445,7 @@ static abi_long do_transmit(abi_long fd, abi_ulong buf, abi_long count, abi_ulon
     if (count != 0) {
         do {
             ret = write(fd, p, count);
-        } while (ret == EINTR);
+        } while ((ret == -1) && (errno == EINTR));
         if (ret >= 0)
             unlock_user(p, buf, 0);
         else return get_errno(ret);
@@ -557,7 +557,7 @@ static abi_long do_fdwait(abi_int n, abi_ulong rfd_addr, abi_ulong wfd_addr, abi
      *      CGC binaries have that, but we don't need it (we just don't copy tv back). */
     do {
         ret = select(n, rfds_ptr, wfds_ptr, NULL, tv_ptr);
-    } while (ret == EINTR);
+    } while ((ret == -1) && (errno == EINTR));
     if (ret == -1)
         return get_errno(ret);
 
