@@ -461,6 +461,8 @@ static void QEMU_NORETURN force_sig(int target_sig)
         getrlimit(RLIMIT_CORE, &nodump);
         nodump.rlim_cur=0;
         setrlimit(RLIMIT_CORE, &nodump);
+        qemu_log("qemu: uncaught target signal %d (%s) - %s [%08x]\n",
+            target_sig, strsignal(host_sig), "core dumped",env->eip);
         (void) fprintf(stderr, "qemu: uncaught target signal %d (%s) - %s\n",
             target_sig, strsignal(host_sig), "core dumped" );
     }

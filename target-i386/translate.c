@@ -8086,7 +8086,7 @@ done_generating:
     if (qemu_loglevel_mask(CPU_LOG_TB_IN_ASM)) {
         int disas_flags;
         qemu_log("----------------\n");
-        qemu_log("IN: %s\n", lookup_symbol(pc_start));
+        qemu_log("IN: %s [%08x,%08x]\n", lookup_symbol(pc_start),pc_start,pc_ptr - pc_start);
 #ifdef TARGET_X86_64
         if (dc->code64)
             disas_flags = 2;
