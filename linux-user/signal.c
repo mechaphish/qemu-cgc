@@ -5652,7 +5652,7 @@ void process_pending_signals(CPUArchState *cpu_env)
         force_sig(sig);
     } else {
         fprintf(stderr, "There's a handler for signal %d! It cannot be!", sig);
-        abort();
+        exit(-35);
 //        /* compute the blocked signals during the handler execution */
 //        target_to_host_sigset(&set, &sa->sa_mask);
 //        /* SA_NODEFER indicates that the current signal should not be

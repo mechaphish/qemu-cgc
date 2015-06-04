@@ -291,7 +291,7 @@ static void parse_type_number(Visitor *v, double *obj, const char *name,
         val = strtod(siv->string, &endp);
     } else {
         fprintf(stderr, "qemu: The compiler complains if I don't check... and it was right!\n");
-        abort();
+        exit(-38);
     }
 
     if (!siv->string || errno || endp == siv->string || *endp) {
