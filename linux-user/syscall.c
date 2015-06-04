@@ -644,7 +644,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
         print_syscall_ret(num, ret);
     if (!((ret >= 0) && (ret <= 6))) { /* CGC syscalls return either 0 or an error */
         fprintf(stderr, "qemu: INTERNAL ERROR: syscall %d tried to return %d, but all CGC syscall return either 0 or one of the CGC_Exxx (positive) values.\n", num, ret);
-        abort();
+        exit(-1);
     }
     return ret;
 }
