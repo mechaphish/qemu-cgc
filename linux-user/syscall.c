@@ -563,7 +563,7 @@ static abi_long do_fdwait(abi_int n, abi_ulong rfd_addr, abi_ulong wfd_addr, abi
 
     if (is_error(ret)) {
         fprintf(stderr, "qemu: INTERNAL ERROR: select returned an error value != -1 ("TARGET_ABI_FMT_ld") !", ret);
-        abort();
+        exit(-39);
     }
 
     if (rfd_addr && copy_to_user_fdset(rfd_addr, &rfds, n))
