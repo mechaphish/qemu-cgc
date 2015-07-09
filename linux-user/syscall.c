@@ -484,7 +484,7 @@ static abi_long do_random(abi_ulong buf, abi_long count, abi_ulong p_rnd_out)
     for (i = 0; i < count; i += sizeof(randval)) {
         /* CGC TODO: Should I worry about multi-threading? */
         _Static_assert(RAND_MAX >= INT16_MAX, "I rely on RAND_MAX giving at least 16 random bits");
-        randval = rand() & 0xFFFFu;
+        randval = 0x4141;
         size = ((count - i) < sizeof(randval)) ? (count - i) : sizeof(randval);
         if (size == 1) {
             ret = put_user_u8((uint8_t) randval, buf + i);
