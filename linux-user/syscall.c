@@ -189,6 +189,7 @@ _syscall6(int, sys_pselect6, int, nfds, fd_set *, readfds, fd_set *, writefds,
 #endif
 
 abi_ulong cgc_allocation_base = 0xb7800000;
+unsigned do_eof_exit;
 
 static inline int host_to_target_errno(int err)
 {
@@ -422,6 +423,11 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
             unlock_user(p, buf, ret);
         else return get_errno(ret);
     }
+
+    /* if eof-exit is enabled we exit when we see EOF, this should only be used for binaries which
+       don't handle EOF themselves */
+    if (do_eof_exit && (ret == 0))
+        exit_group(1);
 
     if (prx != NULL) {
         __put_user(ret, prx);

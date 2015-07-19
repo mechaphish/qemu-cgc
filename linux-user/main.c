@@ -67,6 +67,8 @@ unsigned long reserved_va;
 #endif
 #endif
 
+extern unsigned do_eof_exit;
+
 static void usage(void);
 
 static const char *interp_prefix = CONFIG_QEMU_INTERP_PREFIX;
@@ -635,6 +637,11 @@ static void handle_arg_version(const char *arg)
     exit(0);
 }
 
+static void handle_eof_exit(const char *arg)
+{
+    do_eof_exit = 1;
+}
+
 struct qemu_argument {
     const char *argv;
     const char *env;
@@ -682,6 +689,8 @@ static const struct qemu_argument arg_table[] = {
      "",           "log system calls"},
     {"seed",       "QEMU_RAND_SEED",   true,  handle_arg_randseed,
      "",           "Seed for pseudo-random number generator"},
+    {"eof-exit",   "",                false,  handle_eof_exit,
+     "",           "Exit if receive reaches EOF"},
     {"version",    "QEMU_VERSION",     false, handle_arg_version,
      "",           "display version information and exit"},
     {NULL, NULL, false, NULL, NULL, NULL}
