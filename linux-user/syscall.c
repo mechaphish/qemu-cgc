@@ -190,6 +190,7 @@ _syscall6(int, sys_pselect6, int, nfds, fd_set *, readfds, fd_set *, writefds,
 
 abi_ulong cgc_allocation_base = 0xb7800000;
 unsigned do_eof_exit;
+unsigned zero_recv_hits = 0;
 
 static inline int host_to_target_errno(int err)
 {
@@ -424,10 +425,18 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
         else return get_errno(ret);
     }
 
-    /* if eof-exit is enabled we exit when we see EOF, this should only be used for binaries which
-       don't handle EOF themselves */
-    if (do_eof_exit && (ret == 0))
-        exit_group(1);
+    /* if we recv 0 two times in a row exit */
+    if (ret == 0)
+    {
+        if (zero_recv_hits > 0)
+            exit_group(1);
+        else
+            zero_recv_hits++;
+    }
+    else
+    {
+        zero_recv_hits = 0;
+    }
 
     if (prx != NULL) {
         __put_user(ret, prx);
