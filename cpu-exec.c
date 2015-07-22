@@ -505,12 +505,13 @@ int cpu_exec(CPUArchState *env)
                 } while(0);
 
                 if (qemu_loglevel_mask(CPU_LOG_EXEC)) {
-                    qemu_log("Trace %p " TARGET_FMT_lx " %d %s\n",
-                             tb->tc_ptr, tb->pc,tb->size, lookup_symbol(tb->pc));
+                    qemu_log("Trace %p [" TARGET_FMT_lx "] %s\n",
+                             tb->tc_ptr, tb->pc, lookup_symbol(tb->pc));
                 }
                 /* see if we can patch the calling TB. When the TB
                    spans two pages, we cannot safely do a direct
                    jump. */
+
                 if (next_tb != 0 && tb->page_addr[1] == -1) {
                     tb_add_jump((TranslationBlock *)(next_tb & ~TB_EXIT_MASK),
                                 next_tb & TB_EXIT_MASK, tb);

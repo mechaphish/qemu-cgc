@@ -189,6 +189,9 @@ _syscall6(int, sys_pselect6, int, nfds, fd_set *, readfds, fd_set *, writefds,
 #endif
 
 unsigned first_recv = 1;
+abi_ulong cgc_allocation_base = 0xb7800000;
+unsigned do_eof_exit;
+unsigned zero_recv_hits = 0;
 
 static inline int host_to_target_errno(int err)
 {
@@ -431,6 +434,19 @@ static abi_long do_receive(CPUX86State *env, abi_long fd, abi_ulong buf, abi_lon
         else return get_errno(ret);
     }
 
+    /* if we recv 0 two times in a row exit */
+    if (ret == 0)
+    {
+        if (zero_recv_hits > 0)
+            exit_group(1);
+        else
+            zero_recv_hits++;
+    }
+    else
+    {
+        zero_recv_hits = 0;
+    }
+
     if (prx != NULL) {
         __put_user(ret, prx);
         unlock_user(prx, p_rx_bytes, 4);
@@ -483,7 +499,7 @@ static abi_long do_random(abi_ulong buf, abi_long count, abi_ulong p_rnd_out)
     for (i = 0; i < count; i += sizeof(randval)) {
         /* CGC TODO: Should I worry about multi-threading? */
         _Static_assert(RAND_MAX >= INT16_MAX, "I rely on RAND_MAX giving at least 16 random bits");
-        randval = rand() & 0xFFFFu;
+        randval = 0x4141;
         size = ((count - i) < sizeof(randval)) ? (count - i) : sizeof(randval);
         if (size == 1) {
             ret = put_user_u8((uint8_t) randval, buf + i);
@@ -507,6 +523,7 @@ static abi_long do_random(abi_ulong buf, abi_long count, abi_ulong p_rnd_out)
 static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
 {
     int prot = PROT_READ | PROT_WRITE;
+    abi_ulong aligned_length;
     abi_ulong *p;
 
     if (exec)
@@ -517,7 +534,10 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
             return TARGET_EFAULT;
     } else p = NULL; /* Believe it or not, binfmt_cgc allows this */
 
-    abi_ulong mmap_ret = target_mmap(0, len, prot, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    /* this needs to be the same as angr */
+    aligned_length = ((len + 0xfff) / 0x1000) * 0x1000;
+
+    abi_ulong mmap_ret = target_mmap(cgc_allocation_base, aligned_length, prot, MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);
     if (mmap_ret == -1)
         return get_errno(mmap_ret);
 
@@ -525,6 +545,8 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
         __put_user(mmap_ret, p);
         unlock_user(p, p_addr, 4);
     }
+
+    cgc_allocation_base += aligned_length;
     return 0;
 }
 
