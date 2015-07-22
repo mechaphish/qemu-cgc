@@ -498,7 +498,11 @@ int cpu_exec(CPUArchState *env)
                     tcg_ctx.tb_ctx.tb_invalidated_flag = 0;
                 }
 
-                AFL_QEMU_CPU_SNIPPET2;
+                /* remove the forkserver stuff from AFL_QEMU_CPU_SNIPPET2
+                   it's been moved to do_receive */
+                do {
+                    afl_maybe_log(tb->pc);
+                } while(0);
 
                 if (qemu_loglevel_mask(CPU_LOG_EXEC)) {
                     qemu_log("Trace %p " TARGET_FMT_lx " %d %s\n",

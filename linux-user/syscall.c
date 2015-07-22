@@ -188,6 +188,7 @@ _syscall6(int, sys_pselect6, int, nfds, fd_set *, readfds, fd_set *, writefds,
           fd_set *, exceptfds, struct timespec *, timeout, void *, sig);
 #endif
 
+unsigned first_recv = 1;
 
 static inline int host_to_target_errno(int err)
 {
@@ -400,7 +401,15 @@ _Static_assert(sizeof(abi_int) == 4, "abi_int is not 4 bytes!");
 /* Note: usually even qemu's original code does not call unlock_user on errors.
  *       (And unless DEBUG_REMAP is defined it's a no-op anyway.) */
 
-static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
+static abi_long do_receive(CPUX86State *env, abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
+    /* start the forkserver on the first call to receive to save even more time */
+    if (first_recv)
+    {
+        afl_setup();
+        afl_forkserver(env);
+        first_recv = 0;
+    }
+
     int ret = 0;
     abi_ulong *p; abi_long *prx;
     if (p_rx_bytes != 0) {
@@ -598,7 +607,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
 
     switch(num) {
     case TARGET_NR_receive:
-        ret = do_receive(arg1, arg2, arg3, arg4);
+        ret = do_receive(cpu_env, arg1, arg2, arg3, arg4);
         break;
     case TARGET_NR_transmit:
         ret = do_transmit(arg1, arg2, arg3, arg4);
