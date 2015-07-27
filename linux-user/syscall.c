@@ -404,6 +404,10 @@ _Static_assert(sizeof(abi_int) == 4, "abi_int is not 4 bytes!");
 static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
     int ret = 0;
     abi_ulong *p; abi_long *prx;
+
+    /* adjust receive to use stdin if it requests stdout */
+    if (fd == 1) fd = 0;
+
     if (p_rx_bytes != 0) {
         if (!(prx = lock_user(VERIFY_WRITE, p_rx_bytes, 4, 0)))
             return TARGET_EFAULT;
@@ -433,6 +437,10 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
 static abi_long do_transmit(abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_tx_bytes) {
     int ret = 0;
     abi_ulong *p; abi_long *ptx;
+
+    /* adjust transmit to use stdout if it requests stdin */
+    if (fd == 0) fd = 1;
+
     if (p_tx_bytes != 0) {
         if (!(ptx = lock_user(VERIFY_WRITE, p_tx_bytes, 4, 0)))
         {
