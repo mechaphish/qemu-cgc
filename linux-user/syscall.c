@@ -530,7 +530,7 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
     /* this needs to be the same as angr */
     aligned_length = ((len + 0xfff) / 0x1000) * 0x1000;
 
-    abi_ulong mmap_ret = target_mmap(cgc_allocation_base, aligned_length, prot, MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);
+    abi_ulong mmap_ret = target_mmap(cgc_allocation_base - aligned_length, aligned_length, prot, MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);
     if (mmap_ret == -1)
         return get_errno(mmap_ret);
 
@@ -539,7 +539,7 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
         unlock_user(p, p_addr, 4);
     }
 
-    cgc_allocation_base += aligned_length;
+    cgc_allocation_base -= aligned_length;
     return 0;
 }
 
