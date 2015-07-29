@@ -188,7 +188,7 @@ _syscall6(int, sys_pselect6, int, nfds, fd_set *, readfds, fd_set *, writefds,
           fd_set *, exceptfds, struct timespec *, timeout, void *, sig);
 #endif
 
-abi_ulong cgc_allocation_base = 0x0c000000;
+abi_ulong cgc_allocation_base = 0xb8000000;
 
 static inline int host_to_target_errno(int err)
 {
