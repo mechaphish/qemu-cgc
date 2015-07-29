@@ -189,7 +189,7 @@ _syscall6(int, sys_pselect6, int, nfds, fd_set *, readfds, fd_set *, writefds,
 #endif
 
 unsigned first_recv = 1;
-abi_ulong cgc_allocation_base = 0xb7800000;
+abi_ulong cgc_allocation_base = 0xb8000000;
 unsigned do_eof_exit;
 unsigned zero_recv_hits = 0;
 
