@@ -443,22 +443,13 @@ static abi_long do_transmit(abi_long fd, abi_ulong buf, abi_long count, abi_ulon
 
     if (p_tx_bytes != 0) {
         if (!(ptx = lock_user(VERIFY_WRITE, p_tx_bytes, 4, 0)))
-        {
-            printf("returning EFAULT");
             return TARGET_EFAULT;
-        }
     } else ptx = NULL;
 
     if (!(p = lock_user(VERIFY_READ, buf, count, 1)))
-    {
-        printf("returning EFAULT\n");
         return TARGET_EFAULT;
-    }
     if (count < 0) /* The kernel does this in rw_verify_area, if I understand correctly */
-    {
-        printf("returning EFAULT\n");
         return TARGET_EINVAL;
-    }
 
     if (count != 0) {
         do {
@@ -466,7 +457,7 @@ static abi_long do_transmit(abi_long fd, abi_ulong buf, abi_long count, abi_ulon
         } while ((ret == -1) && (errno == EINTR));
         if (ret >= 0)
             unlock_user(p, buf, 0);
-        else {printf("returning someshit\n"); return get_errno(ret);}
+        else return get_errno(ret);
     }
 
     if (ptx != NULL) {
@@ -518,6 +509,7 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
     int prot = PROT_READ | PROT_WRITE;
     abi_ulong aligned_length;
     abi_ulong *p;
+    abi_long ret;
 
     if (exec)
         prot |= PROT_EXEC;
@@ -527,6 +519,8 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
             return TARGET_EFAULT;
     } else p = NULL; /* Believe it or not, binfmt_cgc allows this */
 
+    ret = 0;
+
     /* this needs to be the same as angr */
     aligned_length = ((len + 0xfff) / 0x1000) * 0x1000;
 
@@ -534,13 +528,19 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
     if (mmap_ret == -1)
         return get_errno(mmap_ret);
 
+    if (len == 0)
+    {
+        ret = TARGET_EINVAL;
+        mmap_ret = 0;
+    }
+
     if (p != NULL) {
         __put_user(mmap_ret, p);
         unlock_user(p, p_addr, 4);
     }
 
     cgc_allocation_base -= aligned_length;
-    return 0;
+    return ret;
 }
 
 #define USEC_PER_SEC 1000000L
