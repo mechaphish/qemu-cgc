@@ -1388,43 +1388,35 @@ static abi_ulong copy_elf_strings(int argc,char ** argv, void **page,
 static abi_ulong setup_arg_pages(abi_ulong p, struct linux_binprm *bprm,
                                  struct image_info *info)
 {
-    abi_ulong stack_base, size, error, guard;
+    abi_ulong stack_base, size, error;
     int i;
 
-    /* Create enough stack to hold everything.  If we don't use
-       it for args, we'll use it for something else.  */
     size = guest_stack_size;
-    if (size < MAX_ARG_PAGES*TARGET_PAGE_SIZE) {
-        size = MAX_ARG_PAGES*TARGET_PAGE_SIZE;
-    }
-    guard = TARGET_PAGE_SIZE;
-    if (guard < qemu_real_host_page_size) {
-        guard = qemu_real_host_page_size;
-    }
 
-    error = target_mmap(0, size + guard, PROT_READ | PROT_WRITE,
+    /* Yeehaw, CGC binaries all have an executable stack */
+    error = target_mmap(0, size, PROT_READ | PROT_WRITE | PROT_EXEC,
                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (error == -1) {
         perror("mmap stack");
         exit(-1);
     }
 
-    /* We reserve one extra page at the top of the stack as guard.  */
-    target_mprotect(error, guard, PROT_NONE);
-
-    info->stack_limit = error + guard;
+    info->stack_limit = error;
     stack_base = info->stack_limit + size - MAX_ARG_PAGES*TARGET_PAGE_SIZE;
     p += stack_base;
 
+    /* We don't want to copy anything to the stack, it should be all zeroes */
+    /*
     for (i = 0 ; i < MAX_ARG_PAGES ; i++) {
         if (bprm->page[i]) {
             info->rss++;
-            /* FIXME - check return value of memcpy_to_target() for failure */
             memcpy_to_target(stack_base, bprm->page[i], TARGET_PAGE_SIZE);
             g_free(bprm->page[i]);
         }
         stack_base += TARGET_PAGE_SIZE;
     }
+    */
+
     return p;
 }
 
@@ -2182,6 +2174,8 @@ int load_elf_binary(struct linux_binprm *bprm, struct image_info *info)
        when we load the interpreter.  */
     elf_ex = *(struct elfhdr *)bprm->buf;
 
+    /* Ignore the argc, argv, and envp, they aren't used in CGC */
+    /*
     bprm->p = copy_elf_strings(1, &bprm->filename, bprm->page, bprm->p);
     bprm->p = copy_elf_strings(bprm->envc,bprm->envp,bprm->page,bprm->p);
     bprm->p = copy_elf_strings(bprm->argc,bprm->argv,bprm->page,bprm->p);
@@ -2189,6 +2183,7 @@ int load_elf_binary(struct linux_binprm *bprm, struct image_info *info)
         fprintf(stderr, "%s: %s\n", bprm->filename, strerror(E2BIG));
         exit(-1);
     }
+    */
 
     /* Do this so that we can load the interpreter, if need be.  We will
        change some of these later */
@@ -2213,8 +2208,12 @@ int load_elf_binary(struct linux_binprm *bprm, struct image_info *info)
         }
     }
 
+    /* CGC binaries obviously don't need ELF tables... */
+    /*
     bprm->p = create_elf_tables(bprm->p, bprm->argc, bprm->envc, &elf_ex,
                                 info, (elf_interpreter ? &interp_info : NULL));
+    */
+
     info->start_stack = bprm->p;
 
     /* If we have an interpreter, set that as the program's entry point.
