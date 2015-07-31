@@ -79,7 +79,7 @@ const char *qemu_uname_release;
 
 /* This is the size required to get the same stack mapping as the
    CGC CQE VM */
-unsigned long guest_stack_size = 0x20000;
+unsigned long guest_stack_size = 8 * 1024 * 1024;
 
 void gemu_log(const char *fmt, ...)
 {
@@ -869,9 +869,6 @@ int main(int argc, char **argv, char **envp)
 
     /* Read the stack limit from the kernel.  If it's "unlimited",
        then we can do little else besides use the default.  */
-    /* There's a lot of money on the line, we can't risk respecting
-       resource limits! */
-    /*
     {
         struct rlimit lim;
         if (getrlimit(RLIMIT_STACK, &lim) == 0
@@ -880,7 +877,6 @@ int main(int argc, char **argv, char **envp)
             guest_stack_size = lim.rlim_cur;
         }
     }
-    */
 
     cpu_model = NULL;
 #if defined(cpudef_setup)
