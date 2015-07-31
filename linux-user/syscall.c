@@ -189,7 +189,6 @@ _syscall6(int, sys_pselect6, int, nfds, fd_set *, readfds, fd_set *, writefds,
 #endif
 
 unsigned first_recv = 1;
-abi_ulong cgc_allocation_base = 0xb8000000;
 unsigned do_eof_exit;
 unsigned zero_recv_hits = 0;
 
@@ -545,10 +544,7 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
 
     ret = 0;
 
-    /* this needs to be the same as angr */
-    aligned_length = ((len + 0xfff) / 0x1000) * 0x1000;
-
-    abi_ulong mmap_ret = target_mmap(cgc_allocation_base - aligned_length, aligned_length, prot, MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);
+    abi_ulong mmap_ret = target_mmap(NULL, len, prot, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     if (mmap_ret == -1)
         return get_errno(mmap_ret);
 
@@ -563,7 +559,6 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
         unlock_user(p, p_addr, 4);
     }
 
-    cgc_allocation_base -= aligned_length;
     return ret;
 }
 

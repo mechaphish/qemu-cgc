@@ -60,7 +60,8 @@ int have_guest_base;
 /* MIPS only supports 31 bits of virtual address space for user space */
 unsigned long reserved_va = 0x77000000;
 # else
-unsigned long reserved_va = 0xf7000000;
+/* CGC CQE puts the top of the stack at this address, we will too */
+unsigned long reserved_va = 0xbaaab000;
 # endif
 #else
 unsigned long reserved_va;
@@ -75,7 +76,10 @@ const char *qemu_uname_release;
 /* XXX: on x86 MAP_GROWSDOWN only works if ESP <= address + 32, so
    we allocate a bigger stack. Need a better solution, for example
    by remapping the process stack directly at the right place */
-unsigned long guest_stack_size = 8 * 1024 * 1024UL;
+
+/* This is the size required to get the same stack mapping as the
+   CGC CQE VM */
+unsigned long guest_stack_size = 0x20000;
 
 void gemu_log(const char *fmt, ...)
 {
@@ -865,6 +869,9 @@ int main(int argc, char **argv, char **envp)
 
     /* Read the stack limit from the kernel.  If it's "unlimited",
        then we can do little else besides use the default.  */
+    /* There's a lot of money on the line, we can't risk respecting
+       resource limits! */
+    /*
     {
         struct rlimit lim;
         if (getrlimit(RLIMIT_STACK, &lim) == 0
@@ -873,6 +880,7 @@ int main(int argc, char **argv, char **envp)
             guest_stack_size = lim.rlim_cur;
         }
     }
+    */
 
     cpu_model = NULL;
 #if defined(cpudef_setup)
@@ -1410,6 +1418,12 @@ int main(int argc, char **argv, char **envp)
         }
         gdb_handlesig(cpu, 0);
     }
+
+    /* Placed to get allocate to behave just like the CGC CQE VM, there's
+       probably a more natural way to have this occur... */
+    reserved_va = 0xb8000000;
+    mmap_next_start = 0xb8000000;
+
     cpu_loop(env);
     /* never exits */
     return 0;
