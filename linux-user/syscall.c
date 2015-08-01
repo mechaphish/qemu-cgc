@@ -632,7 +632,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
         break;
 
     case TARGET_NR_deallocate:
-        ret = get_errno(target_munmap(arg1, arg2));
+        ret = host_to_target_errno(target_munmap(arg1, arg2));
         break;
 
 
