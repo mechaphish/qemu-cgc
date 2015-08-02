@@ -530,7 +530,6 @@ static abi_long do_random(abi_ulong buf, abi_long count, abi_ulong p_rnd_out)
 static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
 {
     int prot = PROT_READ | PROT_WRITE;
-    abi_ulong aligned_length;
     abi_ulong *p;
     abi_long ret;
 
@@ -544,15 +543,12 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
 
     ret = 0;
 
-    abi_ulong mmap_ret = target_mmap(NULL, len, prot, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+
+    abi_ulong mmap_ret = target_mmap((abi_ulong)0, len, prot, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     if (mmap_ret == -1)
         return get_errno(mmap_ret);
-
-    if (len == 0)
-    {
-        ret = TARGET_EINVAL;
-        mmap_ret = 0;
-    }
+    if (mmap_ret == 0)
+        return host_to_target_errno(errno);
 
     if (p != NULL) {
         __put_user(mmap_ret, p);
