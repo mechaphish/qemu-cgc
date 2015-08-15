@@ -543,8 +543,8 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
 
     ret = 0;
 
-
-    abi_ulong mmap_ret = target_mmap((abi_ulong)0, len, prot, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    abi_ulong aligned_len = ((len + 0xfff) / 0x1000) * 0x1000;
+    abi_ulong mmap_ret = target_mmap((abi_ulong)0, aligned_len, prot, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     if (mmap_ret == -1)
         return get_errno(mmap_ret);
     if (mmap_ret == 0)
@@ -556,6 +556,12 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
     }
 
     return ret;
+}
+
+static abi_long do_deallocate(abi_ulong start, abi_ulong len)
+{
+    abi_ulong aligned_len = ((len + 0xfff) / 0x1000) * 0x1000;
+    return target_munmap(start, aligned_len);
 }
 
 #define USEC_PER_SEC 1000000L
@@ -653,7 +659,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
         break;
 
     case TARGET_NR_deallocate:
-        ret = host_to_target_errno(target_munmap(arg1, arg2));
+        ret = do_deallocate(arg1, arg2);
         break;
 
 
