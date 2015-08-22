@@ -1900,6 +1900,11 @@ static void load_elf_image(const char *image_name, int image_fd,
             vaddr_po = TARGET_ELF_PAGEOFFSET(vaddr);
             vaddr_ps = TARGET_ELF_PAGESTART(vaddr);
 
+            /* CGC can insert empty segments and consequently the CGC
+               loader ignores them, we'll make that check here */
+            if (eppnt->p_memsz == 0)
+                continue;
+
             error = target_mmap(vaddr_ps, eppnt->p_filesz + vaddr_po,
                                 elf_prot, MAP_PRIVATE | MAP_FIXED,
                                 image_fd, eppnt->p_offset - vaddr_po);
