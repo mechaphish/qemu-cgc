@@ -535,8 +535,13 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
 
 static abi_long do_deallocate(abi_ulong start, abi_ulong len)
 {
+    abi_long ret;
+
     abi_ulong aligned_len = ((len + 0xfff) / 0x1000) * 0x1000;
-    return target_munmap(start, aligned_len);
+    ret = target_munmap(start, aligned_len);
+
+    /* target_munmap returns either 0 or the errno * -1 */
+    return ret < 0 ? host_to_target_errno(ret * -1) : ret;
 }
 
 #define USEC_PER_SEC 1000000L
