@@ -399,6 +399,8 @@ _Static_assert(sizeof(abi_int) == 4, "abi_int is not 4 bytes!");
 /* Note: usually even qemu's original code does not call unlock_user on errors.
  *       (And unless DEBUG_REMAP is defined it's a no-op anyway.) */
 
+#define DEBUG_LENIENT_LENGTHS
+
 static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
     int ret = 0;
     abi_ulong *p; abi_long *prx;
@@ -410,6 +412,15 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
         if (!(prx = lock_user(VERIFY_WRITE, p_rx_bytes, 4, 0)))
             return TARGET_EFAULT;
     } else prx = NULL;
+
+    /* Shortens the count to valid pages only.
+     * TODO: check, see translate_all.c */
+    const abi_long req_count = count;
+    count = valid_len(buf, count, PAGE_READ|PAGE_WRITE);
+#ifdef DEBUG_LENIENT_LENGTHS
+    if (count < req_count)
+        fprintf(stderr, "FOR_CGC: Pre-shortening receive count=%d to %d\n", req_count, count);
+#endif
 
     if (!(p = lock_user(VERIFY_WRITE, buf, count, 0)))
         return TARGET_EFAULT;
@@ -443,6 +454,15 @@ static abi_long do_transmit(abi_long fd, abi_ulong buf, abi_long count, abi_ulon
         if (!(ptx = lock_user(VERIFY_WRITE, p_tx_bytes, 4, 0)))
             return TARGET_EFAULT;
     } else ptx = NULL;
+
+    /* Shortens the count to valid pages only.
+     * TODO: check, see translate_all.c */
+    const abi_long req_count = count;
+    count = valid_len(buf, count, PAGE_READ);
+#ifdef DEBUG_LENIENT_LENGTHS
+    if (count < req_count)
+        fprintf(stderr, "FOR_CGC: Pre-shortening transmit count=%d to %d\n", req_count, count);
+#endif
 
     if (!(p = lock_user(VERIFY_READ, buf, count, 1)))
         return TARGET_EFAULT;
@@ -478,8 +498,16 @@ static abi_long do_random(abi_ulong buf, abi_long count, abi_ulong p_rnd_out)
             return TARGET_EFAULT;
     } else pout = NULL;
 
+    /* Shortens the count to valid pages only.
+     * TODO: check, see translate_all.c */
+    const abi_long req_count = count;
+    count = valid_len(buf, count, PAGE_READ|PAGE_WRITE);
+#ifdef DEBUG_LENIENT_LENGTHS
+    if (count < req_count)
+        fprintf(stderr, "FOR_CGC: Pre-shortening random() count=%d to %d\n", req_count, count);
+#endif
+
     for (i = 0; i < count; i += sizeof(randval)) {
-        /* CGC TODO: Should I worry about multi-threading? */
         _Static_assert(RAND_MAX >= INT16_MAX, "I rely on RAND_MAX giving at least 16 random bits");
         randval = rand() & 0xFFFFu;
         size = ((count - i) < sizeof(randval)) ? (count - i) : sizeof(randval);
