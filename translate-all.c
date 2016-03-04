@@ -1967,9 +1967,17 @@ retlen:
     assert(start <= req_start);
     ret -= (req_start - start);
     /* ... and the end */
+
+    /* Using `end` here for the calculation can lead to problems when the page-aligned
+     * `end` variable does not proceed a mapped page, instead we should use the value
+     * of start + (ok_pages * TARGET_PAGE_SIZE) to get the boundary of the region. */
+    const target_ulong real_end = start + (ok_pages * TARGET_PAGE_SIZE);
     const target_ulong req_end = req_start + req_len;
-    assert(end >= req_end);
-    ret -= (end - req_end);
+    /* So cases do exist where the end of the region is LESS than the requested end.
+     * Only in cases where the real_end is is greater than the requested end should
+     * be subtraction be done. */
+    if (real_end > req_end)
+        ret -= (real_end - req_end);
 
     if (ret > req_len) {
         fprintf(stderr, "OUR QEMU/CGC ERROR: valid_len should only shorten byte counts, not make them larger! (" TARGET_FMT_lu " > " TARGET_FMT_lu ")\n", ret, req_len);
