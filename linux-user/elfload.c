@@ -213,6 +213,8 @@ static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUX86State *en
 #define ELF_CLASS       ELFCLASS32
 #define ELF_ARCH        EM_386
 
+#define CGC_MAGIC_PAGE_ADDR 0x4347c000
+
 static inline void init_thread(struct target_pt_regs *regs,
                                struct image_info *infop)
 {
@@ -227,6 +229,10 @@ static inline void init_thread(struct target_pt_regs *regs,
 
        A value of 0 tells we have no such handler.  */
     regs->edx = 0;
+
+    /* initialize %ecx to the value of the address of the CGC magic
+       page */
+    regs->ecx = CGC_MAGIC_PAGE_ADDR;
 }
 
 #define ELF_NREG    17
@@ -1416,28 +1422,6 @@ static abi_ulong setup_arg_pages(abi_ulong p, struct linux_binprm *bprm,
         stack_base += TARGET_PAGE_SIZE;
     }
     */
-
-    /* seems like as good a place as any to setup the magic page */
-
-    abi_ulong cgc_magic_page_addr = 0x4347c000;
-    abi_ulong temp_rand;
-
-    error = target_mmap(cgc_magic_page_addr, TARGET_PAGE_SIZE,
-            PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED,
-            -1, 0);
-
-    if (error == -1) {
-        perror("mmap CGC magic page");
-        exit(-1);
-    }
-
-    for(i = 0; i < TARGET_PAGE_SIZE / sizeof(abi_ulong); i++)
-    {
-        temp_rand = rand();
-        memcpy_to_target(cgc_magic_page_addr + (i*sizeof(abi_ulong)), &temp_rand, sizeof(abi_ulong));
-    }
-
-    memcpy_to_target(info->stack_limit + size - sizeof(abi_ulong), &cgc_magic_page_addr, sizeof(abi_ulong));
 
     return p;
 }
