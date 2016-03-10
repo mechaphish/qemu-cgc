@@ -883,7 +883,8 @@ int main(int argc, char **argv, char **envp)
     cpudef_setup(); /* parse cpu definitions in target config file (TBD) */
 #endif
 
-    srand(time(NULL));
+    /* we want rand to be consistent across runs */
+    srand(0);
 
     optind = parse_args(argc, argv);
 
