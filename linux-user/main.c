@@ -639,6 +639,11 @@ static void handle_arg_version(const char *arg)
     exit(0);
 }
 
+static void handle_arg_magicdump(const char *arg)
+{
+    magicdump_filename = strdup(arg);
+}
+
 struct qemu_argument {
     const char *argv;
     const char *env;
@@ -688,6 +693,8 @@ static const struct qemu_argument arg_table[] = {
      "",           "Seed for pseudo-random number generator"},
     {"version",    "QEMU_VERSION",     false, handle_arg_version,
      "",           "display version information and exit"},
+    {"magicdump",  "QEMU_MAGICDUMP",   true, handle_arg_magicdump,
+     "",           "dump CGC magic page contents to file"},
     {NULL, NULL, false, NULL, NULL, NULL}
 };
 
