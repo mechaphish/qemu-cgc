@@ -2736,6 +2736,10 @@ static int dump_write(int fd, const void *ptr, size_t size)
     struct rlimit dumpsize;
     off_t pos;
 
+    /* check immediately if anything needs to be written */
+    if (!(size > 0))
+        return 0;
+
     bytes_written = 0;
     getrlimit(RLIMIT_CORE, &dumpsize);
     if ((pos = lseek(fd, 0, SEEK_CUR))==-1) {
@@ -2852,8 +2856,7 @@ static int fill_note_info(struct elf_note_info *info,
     fill_psinfo(info->psinfo, ts);
     fill_note(&info->notes[1], "CORE", NT_PRPSINFO,
               sizeof (*info->psinfo), info->psinfo);
-    fill_auxv_note(&info->notes[2], ts);
-    info->numnote = 3;
+    info->numnote = 2;
 
     info->notes_size = 0;
     for (i = 0; i < info->numnote; i++)
