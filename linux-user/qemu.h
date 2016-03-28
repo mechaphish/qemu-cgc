@@ -22,6 +22,8 @@
 
 #define THREAD __thread
 
+#define CGC_MAGIC_PAGE_ADDR 0x4347c000
+
 /* This struct is used to hold certain information about the image.
  * Basically, it replicates in user space what would be certain
  * task_struct fields in the kernel
@@ -215,6 +217,9 @@ void cpu_list_lock(void);
 void cpu_list_unlock(void);
 void mmap_fork_start(void);
 void mmap_fork_end(int child);
+
+/* linuxload.c */
+extern char *magicdump_filename;
 
 /* main.c */
 extern unsigned long guest_stack_size;

@@ -1883,6 +1883,120 @@ int page_check_range(target_ulong start, target_ulong len, int flags)
     }
     return 0;
 }
+/* "BUG":   receive()/transmit()/... (like read()/write()/...) check
+ *          permissions only on actual access, return short lengths
+ *          if at least some succeeded.
+ *          In other words, pizza's transmit(len=0x11223344) should
+ *          succeed, and send only up to the process can access.
+ *
+ * FOR CGC: A quick fix is to "adjust" the lengths to match the max
+ *          possible, before an actual read()/write()
+ * TODO:    Could be done better by delegating to host page permissions
+ *          (should be possible, we're x86 with a 64-bit address space)
+ *          Also, this is quite tricky. Might want to check again. */
+
+/* Mostly, valid_len is a copy of page_check_range, but returns:
+ *
+ *    > 0   Number of bytes that satisfy the condition.
+ *          Cannot be more than 31-bit, but should not be a problem :D
+ *
+ *      0   Only if (len == 0), kept for compat.
+ *
+ *     -1   is still an error.
+ */
+target_long valid_len(target_ulong start, target_ulong len, int flags)
+{
+    PageDesc *p;
+    target_ulong end;
+    target_ulong addr;
+
+    /* This function should never be called with addresses outside the
+       guest address space.  If this assert fires, it probably indicates
+       a missing call to h2g_valid.  */
+#if TARGET_ABI_BITS > L1_MAP_ADDR_SPACE_BITS
+    assert(start < ((target_ulong)1 << L1_MAP_ADDR_SPACE_BITS));
+#endif
+
+    if (len == 0) {
+        return 0;
+    }
+    if (start + len - 1 < start) {
+        /* We've wrapped around.  */
+        return -1;
+    }
+
+    _Static_assert(TARGET_LONG_SIZE == 4, "CGC is 32-bit only!");
+    int ok_pages = 0;
+    const target_ulong req_start = start, req_len = len;
+
+    /* must do before we loose bits in the next step */
+    end = TARGET_PAGE_ALIGN(start + len);
+    start = start & TARGET_PAGE_MASK;
+
+    for (addr = start, len = end - start;
+         len != 0;
+         len -= TARGET_PAGE_SIZE, addr += TARGET_PAGE_SIZE) {
+        p = page_find(addr >> TARGET_PAGE_BITS);
+        if (!p) {
+            goto retlen;
+        }
+        if (!(p->flags & PAGE_VALID)) {
+            goto retlen;
+        }
+
+        if ((flags & PAGE_READ) && !(p->flags & PAGE_READ)) {
+            goto retlen;
+        }
+        if (flags & PAGE_WRITE) {
+            if (!(p->flags & PAGE_WRITE_ORG)) {
+                goto retlen;
+            }
+            /* unprotect the page if it was put read-only because it
+               contains translated code */
+            if (!(p->flags & PAGE_WRITE)) {
+                if (!page_unprotect(addr, 0, NULL)) {
+                    goto retlen;
+                }
+            }
+        }
+        ok_pages++;
+    }
+retlen:
+    if (ok_pages == 0)
+        return -1; /* No valid pages -> error */
+
+    /* (Page-aligned) byte count */
+    target_ulong ret = ok_pages * TARGET_PAGE_SIZE;
+
+    /* Remove what was added to page-align the start... */
+    assert(start <= req_start);
+    ret -= (req_start - start);
+    /* ... and the end */
+
+    /* Using `end` here for the calculation can lead to problems when the page-aligned
+     * `end` variable does not proceed a mapped page, instead we should use the value
+     * of start + (ok_pages * TARGET_PAGE_SIZE) to get the boundary of the region. */
+    const target_ulong real_end = start + (ok_pages * TARGET_PAGE_SIZE);
+    const target_ulong req_end = req_start + req_len;
+    /* So cases do exist where the end of the region is LESS than the requested end.
+     * Only in cases where the real_end is is greater than the requested end should
+     * be subtraction be done. */
+    if (real_end > req_end)
+        ret -= (real_end - req_end);
+
+    if (ret > req_len) {
+        fprintf(stderr, "OUR QEMU/CGC ERROR: valid_len should only shorten byte counts, not make them larger! (" TARGET_FMT_lu " > " TARGET_FMT_lu ")\n", ret, req_len);
+        exit(-90);
+    }
+
+    if (ret > INT32_MAX) {
+        /* Not actually possible, right? */
+        fprintf(stderr, "OUR QEMU/CGC WARNING: More than 2 GB of valid space? Should not be possible in CGC, so I further short the length. (" TARGET_FMT_lu " bytes had page permissions OK, returning INT32_MAX instead).\n", ret);
+        return INT32_MAX;
+    }
+    return (target_long) ret;
+}
+
 
 /* called from signal handler: invalidate the code and unprotect the
    page. Return TRUE if the fault was successfully handled. */

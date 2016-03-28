@@ -5,12 +5,15 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <unistd.h>
+#include <sys/mman.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "qemu.h"
 
 #define NGROUPS 32
+
+char *magicdump_filename = NULL;
 
 /* ??? This should really be somewhere else.  */
 abi_long memcpy_to_target(abi_ulong dest, const void *src,
@@ -134,6 +137,7 @@ int loader_exec(int fdexec, const char *filename, char **argv, char **envp,
              struct target_pt_regs * regs, struct image_info *infop,
              struct linux_binprm *bprm)
 {
+    int magic_fd = -1;
     int retval;
     int i;
 
@@ -157,6 +161,46 @@ int loader_exec(int fdexec, const char *filename, char **argv, char **envp,
         } else {
             return -ENOEXEC;
         }
+    }
+
+    if(retval>=0) {
+        abi_ulong error, temp_rand;
+
+        error = target_mmap(CGC_MAGIC_PAGE_ADDR, TARGET_PAGE_SIZE,
+                            PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED,
+                            -1, 0);
+
+        if (error == -1) {
+            perror("mmap CGC magic page");
+            exit(-1);
+        }
+
+        if (magicdump_filename != NULL)
+        {
+            magic_fd = open(magicdump_filename, O_WRONLY|O_CREAT, 0666);
+            if (magic_fd < 0)
+                fprintf(stderr, "failed to open file %s for magicdump: %s",
+                        magicdump_filename,
+                        strerror(errno));
+        }
+
+        for(i=0; i < TARGET_PAGE_SIZE / sizeof(abi_ulong); i++)
+        {
+            temp_rand = rand();
+            memcpy_to_target(CGC_MAGIC_PAGE_ADDR+(i*sizeof(abi_ulong)),
+                             &temp_rand, sizeof(abi_ulong));
+            if (!(magic_fd < 0))
+            {
+                if (write(magic_fd, &temp_rand, sizeof(abi_ulong)) != sizeof(abi_ulong))
+                {
+                    fprintf(stderr, "error writing to magicdump file %s", strerror(errno));
+                    return -1;
+                }
+            }
+        }
+
+        target_mprotect(CGC_MAGIC_PAGE_ADDR, TARGET_PAGE_SIZE, PROT_READ);
     }
 
     if(retval>=0) {
