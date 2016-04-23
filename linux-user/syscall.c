@@ -186,7 +186,6 @@ _syscall6(int, sys_pselect6, int, nfds, fd_set *, readfds, fd_set *, writefds,
           fd_set *, exceptfds, struct timespec *, timeout, void *, sig);
 #endif
 
-unsigned first_recv = 1;
 unsigned do_eof_exit;
 unsigned zero_recv_hits = 0;
 
@@ -402,13 +401,6 @@ _Static_assert(sizeof(abi_int) == 4, "abi_int is not 4 bytes!");
  *       (And unless DEBUG_REMAP is defined it's a no-op anyway.) */
 
 static abi_long do_receive(CPUX86State *env, abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
-    /* start the forkserver on the first call to receive to save even more time */
-    if (first_recv)
-    {
-        afl_setup();
-        afl_forkserver(env);
-        first_recv = 0;
-    }
     int ret = 0;
     abi_ulong *p; abi_long *prx;
 
@@ -422,7 +414,7 @@ static abi_long do_receive(CPUX86State *env, abi_long fd, abi_ulong buf, abi_lon
 
     /* Shortens the count to valid pages only.
      * TODO: check, see translate_all.c */
-    const abi_long req_count = count;
+    __attribute__((unused)) const abi_long req_count = count;
     count = valid_len(buf, count, PAGE_READ|PAGE_WRITE);
 #ifdef DEBUG_LENIENT_LENGTHS
     if (count < req_count)
@@ -477,7 +469,7 @@ static abi_long do_transmit(abi_long fd, abi_ulong buf, abi_long count, abi_ulon
 
     /* Shortens the count to valid pages only.
      * TODO: check, see translate_all.c */
-    const abi_long req_count = count;
+    __attribute__((unused)) const abi_long req_count = count;
     count = valid_len(buf, count, PAGE_READ);
 #ifdef DEBUG_LENIENT_LENGTHS
     if (count < req_count)
@@ -520,7 +512,7 @@ static abi_long do_random(abi_ulong buf, abi_long count, abi_ulong p_rnd_out)
 
     /* Shortens the count to valid pages only.
      * TODO: check, see translate_all.c */
-    const abi_long req_count = count;
+    __attribute__((unused)) const abi_long req_count = count;
     count = valid_len(buf, count, PAGE_READ|PAGE_WRITE);
 #ifdef DEBUG_LENIENT_LENGTHS
     if (count < req_count)

@@ -188,6 +188,8 @@ int loader_exec(int fdexec, const char *filename, char **argv, char **envp,
                     fprintf(stderr, "error writing to magicdump file %s", strerror(errno));
                     return -1;
                 }
+                // TODO: Confirm with Nick that it can be closed. dup2 to a high number otherwise.
+                close(magic_fd);
             }
         }
 

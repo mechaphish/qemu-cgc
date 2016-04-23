@@ -38,6 +38,9 @@
 
 char *exec_path;
 
+int multicb_i = -1;       // Running CB multicb_i ...
+int multicb_count = -1;   //     ... of multicb_count
+
 int singlestep;
 const char *filename;
 //const char *argv0;
@@ -510,6 +513,25 @@ static void handle_arg_magicdump(const char *arg)
     magicdump_filename = strdup(arg);
 }
 
+static void handle_arg_multicb_i(const char *arg)
+{
+    //multicb_i = atoi(arg);
+    errno = 0; char *endptr;
+    long l = strtol(arg, &endptr, 10);
+    if ((errno != 0) || (l < 0) || (l > INT_MAX) || (*endptr != '\0'))
+        err(-20, "Error parsing --multicb_i");
+    multicb_i = (int) l;
+}
+static void handle_arg_multicb_count(const char *arg)
+{
+    //multicb_count = atoi(arg);
+    errno = 0; char *endptr;
+    long l = strtol(arg, &endptr, 10);
+    if ((errno != 0) || (l < 0) || (l > INT_MAX) || (*endptr != '\0'))
+        err(-20, "Error parsing --multicb_count");
+    multicb_count = (int) l;
+}
+
 struct qemu_argument {
     const char *argv;
     const char *env;
@@ -543,6 +565,10 @@ static const struct qemu_argument arg_table[] = {
      "",           "display version information and exit"},
     {"magicdump",  "QEMU_MAGICDUMP",   true, handle_arg_magicdump,
      "",           "dump CGC magic page contents to file"},
+    {"multicb_i",  "QEMU_MULTICB_I",  true, handle_arg_multicb_i,
+     "",           "For multi-CB challenges: which one (0-based)"},
+    {"multicb_count",  "QEMU_MULTICB_COUNT",  true, handle_arg_multicb_count,
+     "",           "For multi-CB challenges: how many in total"},
     {NULL, NULL, false, NULL, NULL, NULL}
 };
 
