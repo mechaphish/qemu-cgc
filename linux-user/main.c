@@ -385,7 +385,7 @@ void cpu_loop(CPUX86State *env)
             pc = env->segs[R_CS].base + env->eip;
             fprintf(stderr, "qemu: 0x%08lx: unhandled CPU exception 0x%x - aborting\n",
                     (long)pc, trapnr);
-            error(-34);
+            errx(-34, "Unhandled CPU execption (see above)");
         }
         process_pending_signals(env);
     }
