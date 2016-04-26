@@ -116,6 +116,15 @@ int __clone2(int (*fn)(void *), void *child_stack_base,
 //#define DEBUG
 
 
+#include <ctype.h>
+#if DEBUG_MULTICB >= 2
+extern int multicb_i; // slight abuse
+# define MCBDBG(fmt, ...) fprintf(stderr, "[CB_%d] " fmt "\n", multicb_i, ##__VA_ARGS__)
+#else
+# define MCBDBG(fmt, ...) do { ; } while (0)
+#endif
+
+
 #undef _syscall0
 #undef _syscall1
 #undef _syscall2
@@ -403,6 +412,7 @@ _Static_assert(sizeof(abi_int) == 4, "abi_int is not 4 bytes!");
 static abi_long do_receive(CPUX86State *env, abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
     int ret = 0;
     abi_ulong *p; abi_long *prx;
+    MCBDBG("REQ receive(fd=%d, count=%d)", fd, count);
 
     /* adjust receive to use stdin if it requests stdout */
     if (fd == 1) fd = 0;
@@ -428,12 +438,23 @@ static abi_long do_receive(CPUX86State *env, abi_long fd, abi_ulong buf, abi_lon
 
     if (count != 0) {
         do {
+            //MCBDBG("  ACT read(fd=%d, count=%d)", fd, count);
+            errno = 0;
             ret = read(fd, p, count);
+            //MCBDBG("  ART read(fd=%d, count=%d) = %d (errno = %d, %s)", fd, count, ret, errno, strerror(errno));
         } while ((ret == -1) && (errno == EINTR));
         if (ret >= 0)
             unlock_user(p, buf, ret);
         else return get_errno(ret);
     }
+
+    assert(ret >= 0);
+    if (ret > 0) {
+        __attribute__((unused)) unsigned char c = *((unsigned char *) p);
+        if (isprint(c))
+            MCBDBG("RET received %d bytes [%c ...] (fd=%d, count=%d)", ret, c, fd, count);
+        else MCBDBG("RET received %d bytes [0x%02x ...] (fd=%d, count=%d)", ret, c, fd, count);
+    } else MCBDBG("RET received NO BYTES (fd=%d, count=%d)", fd, count);
 
     /* if we recv 0 two times in a row exit */
     if (ret == 0)
@@ -458,6 +479,7 @@ static abi_long do_receive(CPUX86State *env, abi_long fd, abi_ulong buf, abi_lon
 static abi_long do_transmit(abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_tx_bytes) {
     int ret = 0;
     abi_ulong *p; abi_long *ptx;
+    MCBDBG("REQ transmit(fd=%d, count=%d)", fd, count);
 
     /* adjust transmit to use stdout if it requests stdin */
     if (fd == 0) fd = 1;
@@ -483,12 +505,28 @@ static abi_long do_transmit(abi_long fd, abi_ulong buf, abi_long count, abi_ulon
 
     if (count != 0) {
         do {
+            __attribute__((unused)) unsigned char c = *((unsigned char *) p);
+            //if (isprint(c))
+            //    MCBDBG("  ACT write(fd=%d, count=%d, buf=[%c ...])", fd, count, c);
+            //else MCBDBG("  ACT write(fd=%d, count=%d, buf=[0x%x ...])", fd, count, c);
+            errno = 0;
+
             ret = write(fd, p, count);
+
+            //MCBDBG("  ART write(fd=%d, count=%d) = %d (errno = %d, %s)", fd, count, ret, errno, strerror(errno));
         } while ((ret == -1) && (errno == EINTR));
         if (ret >= 0)
             unlock_user(p, buf, 0);
         else return get_errno(ret);
     }
+
+    assert(ret >= 0);
+    if (ret > 0) {
+        __attribute__((unused)) unsigned char c = *((unsigned char *) p);
+        if (isprint(c))
+            MCBDBG("RET written %d bytes [%c ...] (fd=%d, count=%d)", ret, c, fd, count);
+        else MCBDBG("RET written %d bytes [0x%02x ...] (fd=%d, count=%d)", ret, c, fd, count);
+    } else MCBDBG("RET written NO BYTES (fd=%d, count=%d)", fd, count);
 
     if (ptx != NULL) {
         __put_user(ret, ptx);
@@ -684,6 +722,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
 
 
     case TARGET_NR_terminate:
+        MCBDBG("REQ terminate(%d)",arg1);
 #ifdef TARGET_GPROF
         _mcleanup();
 #endif
