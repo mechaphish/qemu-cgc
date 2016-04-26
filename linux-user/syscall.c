@@ -180,10 +180,6 @@ static type name (type1 arg1,type2 arg2,type3 arg3,type4 arg4,type5 arg5,	\
 }
 
 
-#ifdef __NR_exit_group
-_syscall1(int,exit_group,int,error_code)
-#endif
-
 
 /* CGC TODO: which select? */
 #if defined(TARGET_NR_pselect6)
@@ -460,7 +456,7 @@ static abi_long do_receive(CPUX86State *env, abi_long fd, abi_ulong buf, abi_lon
     if (ret == 0)
     {
         if (zero_recv_hits > 0)
-            exit_group(1);
+            exit(1);
         else
             zero_recv_hits++;
     }
@@ -727,7 +723,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
         _mcleanup();
 #endif
         gdb_exit(cpu_env, arg1);
-        ret = get_errno(exit_group(arg1));
+        exit(arg1);
         break;
 
 
