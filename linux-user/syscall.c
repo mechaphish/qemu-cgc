@@ -455,9 +455,16 @@ static abi_long do_receive(CPUX86State *env, abi_long fd, abi_ulong buf, abi_lon
     /* if we recv 0 two times in a row exit */
     if (ret == 0)
     {
+#define NO_EXIT_ON_DOUBLE_RECV0
+#ifdef NO_EXIT_ON_DOUBLE_RECV0
+#  ifdef DEBUG
+        fprintf(stderr, "zero_recv_hits = %d > 0, heuristic would exit! (disabled)\n");
+#  endif
+#else
         if (zero_recv_hits > 0)
             exit(1);
         else
+#endif
             zero_recv_hits++;
     }
     else
