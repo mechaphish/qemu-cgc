@@ -117,7 +117,7 @@ int __clone2(int (*fn)(void *), void *child_stack_base,
 
 
 #include <ctype.h>
-#if DEBUG_MULTICB >= 2
+#if defined(DEBUG_MULTICB) && (DEBUG_MULTICB >= 2)
 extern int multicb_i; // slight abuse
 # define MCBDBG(fmt, ...) fprintf(stderr, "[CB_%d] " fmt "\n", multicb_i, ##__VA_ARGS__)
 #else
