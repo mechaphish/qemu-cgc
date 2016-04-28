@@ -115,6 +115,21 @@ int __clone2(int (*fn)(void *), void *child_stack_base,
 
 //#define DEBUG
 
+static bool ran_forkserver_setup = false;
+// Postponing forkserver setup at the first fd operation (or _terminate, for pathological cases)
+// TODO: Ideally one would do this at the first receive(stdin) from _any_ of the CBs
+//       Tricky thing is, that would require a mechanism to tell the other CBs to do
+//       their own forkserver setup at the next interaction with already-forkserver-ed CBs
+//       (Which, BTW, may be a blocked fdwait! Extra checking socket?)
+extern void afl_setup(void);
+extern void afl_forkserver(CPUArchState*);
+static inline void do_forkserver_setup(CPUX86State *env)
+{
+    afl_setup();
+    afl_forkserver(env);
+    ran_forkserver_setup = true;
+}
+
 
 #include <ctype.h>
 #if defined(DEBUG_MULTICB) && (DEBUG_MULTICB >= 2)
@@ -405,7 +420,7 @@ _Static_assert(sizeof(abi_int) == 4, "abi_int is not 4 bytes!");
 /* Note: usually even qemu's original code does not call unlock_user on errors.
  *       (And unless DEBUG_REMAP is defined it's a no-op anyway.) */
 
-static abi_long do_receive(CPUX86State *env, abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
+static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
     int ret = 0;
     abi_ulong *p; abi_long *prx;
     MCBDBG("REQ receive(fd=%d, count=%d)", fd, count);
@@ -435,7 +450,7 @@ static abi_long do_receive(CPUX86State *env, abi_long fd, abi_ulong buf, abi_lon
     if (count != 0) {
         do {
             //MCBDBG("  ACT read(fd=%d, count=%d)", fd, count);
-            errno = 0;
+            //errno = 0;
             ret = read(fd, p, count);
             //MCBDBG("  ART read(fd=%d, count=%d) = %d (errno = %d, %s)", fd, count, ret, errno, strerror(errno));
         } while ((ret == -1) && (errno == EINTR));
@@ -455,7 +470,6 @@ static abi_long do_receive(CPUX86State *env, abi_long fd, abi_ulong buf, abi_lon
     /* if we recv 0 two times in a row exit */
     if (ret == 0)
     {
-#define NO_EXIT_ON_DOUBLE_RECV0
 #ifdef NO_EXIT_ON_DOUBLE_RECV0
 #  ifdef DEBUG
         fprintf(stderr, "zero_recv_hits = %d > 0, heuristic would exit! (disabled)\n");
@@ -512,10 +526,8 @@ static abi_long do_transmit(abi_long fd, abi_ulong buf, abi_long count, abi_ulon
             //if (isprint(c))
             //    MCBDBG("  ACT write(fd=%d, count=%d, buf=[%c ...])", fd, count, c);
             //else MCBDBG("  ACT write(fd=%d, count=%d, buf=[0x%x ...])", fd, count, c);
-            errno = 0;
-
+            //errno = 0;
             ret = write(fd, p, count);
-
             //MCBDBG("  ART write(fd=%d, count=%d) = %d (errno = %d, %s)", fd, count, ret, errno, strerror(errno));
         } while ((ret == -1) && (errno == EINTR));
         if (ret >= 0)
@@ -704,13 +716,16 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
 
     switch(num) {
     case TARGET_NR_receive:
-        ret = do_receive(cpu_env, arg1, arg2, arg3, arg4);
+        if (!ran_forkserver_setup) do_forkserver_setup(cpu_env);
+        ret = do_receive(arg1, arg2, arg3, arg4);
         break;
     case TARGET_NR_transmit:
+        if (!ran_forkserver_setup) do_forkserver_setup(cpu_env);
         ret = do_transmit(arg1, arg2, arg3, arg4);
         break;
 
     case TARGET_NR_fdwait:
+        if (!ran_forkserver_setup) do_forkserver_setup(cpu_env);
         ret = do_fdwait(arg1, arg2, arg3, arg4, arg5);
         break;
 
@@ -725,6 +740,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
 
 
     case TARGET_NR_terminate:
+        if (!ran_forkserver_setup) do_forkserver_setup(cpu_env);
         MCBDBG("REQ terminate(%d)",arg1);
 #ifdef TARGET_GPROF
         _mcleanup();

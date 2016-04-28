@@ -498,9 +498,8 @@ int cpu_exec(CPUArchState *env)
                     tcg_ctx.tb_ctx.tb_invalidated_flag = 0;
                 }
 
-                /* For multi-CB we don't postpone the forserver setup.
-                 * TODO: do it at the first receive OR transmit OR fdwait? */
-                AFL_QEMU_CPU_SNIPPET2;
+                /* Note: postponed forkserver setup, see syscall.c */
+                afl_maybe_log(tb->pc);
 
                 if (qemu_loglevel_mask(CPU_LOG_EXEC)) {
                     qemu_log("Trace %p [" TARGET_FMT_lx "] %s\n",
