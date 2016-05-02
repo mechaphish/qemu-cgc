@@ -175,14 +175,14 @@ static const unsigned long reserved_va = 0xf7000000; //extern unsigned long rese
 #define TARGET_PAGE_MASK ~(TARGET_PAGE_SIZE - 1)
 #define TARGET_PAGE_ALIGN(addr) (((addr) + TARGET_PAGE_SIZE - 1) & TARGET_PAGE_MASK)
 
-/* ??? These should be the larger of uintptr_t and target_ulong.  */
-/* MADE CONSTANT FOR CGC */
-#ifndef __amd64__
-# error MADE CONSTS FOR x86 FOR CGC
-#endif
+#if defined(__i386__) || defined(__amd64__)
+// CHANGED: attempt at speeding up memory access for CGC
 static const uintptr_t qemu_real_host_page_size = 4096;
 static const uintptr_t qemu_host_page_size = 4096;
 static const uintptr_t qemu_host_page_mask = ~(((uintptr_t) 4096) - 1);
+#else
+# error Made page size constant for CGC, compile me on x86/x64!
+#endif
 #define HOST_PAGE_ALIGN(addr) (((addr) + ((uintptr_t) 4096) - 1) & ~(((uintptr_t) 4096) - 1))
 //#define HOST_PAGE_ALIGN(addr) (((addr) + qemu_host_page_size - 1) & qemu_host_page_mask)
 

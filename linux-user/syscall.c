@@ -397,8 +397,6 @@ _Static_assert(sizeof(abi_int) == 4, "abi_int is not 4 bytes!");
 /* Note: usually even qemu's original code does not call unlock_user on errors.
  *       (And unless DEBUG_REMAP is defined it's a no-op anyway.) */
 
-//#define DEBUG_LENIENT_LENGTHS
-
 static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
     int ret = 0;
     abi_ulong *p; abi_long *prx;
