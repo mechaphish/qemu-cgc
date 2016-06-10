@@ -855,12 +855,14 @@ int main(int argc, char **argv, char **envp)
         fprintf(stderr, "qemu: do NOT set STICKY_TIMEOUTS, I handle that myself and I use the default timeout modification.\n");
         exit(11);
     }
+    /*
     if ((persona & ADDR_NO_RANDOMIZE) != ADDR_NO_RANDOMIZE) {
         if (personality(persona | ADDR_NO_RANDOMIZE) == -1)
             err(1, "Couldn't set ADDR_NO_RANDOMIZE!");
         execv(argv[0], argv);
         err(1, "Could not re-exec myself to disable ASLR! That's weird...");
     }
+    */
 
     module_call_init(MODULE_INIT_QOM);
 
