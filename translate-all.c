@@ -1334,14 +1334,15 @@ static inline void tb_alloc_page(TranslationBlock *tb,
     p->first_tb = (TranslationBlock *)((uintptr_t)tb | n);
     invalidate_page_bitmap(p);
 
+/*
 #if defined(CONFIG_USER_ONLY)
     if (p->flags & PAGE_WRITE) {
         target_ulong addr;
         PageDesc *p2;
         int prot;
 
-        /* force the host page as non writable (writes will have a
-           page fault + mprotect overhead) */
+        // force the host page as non writable (writes will have a
+        // page fault + mprotect overhead)
         page_addr &= qemu_host_page_mask;
         prot = 0;
         for (addr = page_addr; addr < page_addr + qemu_host_page_size;
@@ -1361,6 +1362,7 @@ static inline void tb_alloc_page(TranslationBlock *tb,
                page_addr);
 #endif
     }
+*/
 #else
     /* if some code is already present, then the pages are already
        protected. So we handle the case where only the first TB is
