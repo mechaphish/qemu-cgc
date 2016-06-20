@@ -1363,14 +1363,16 @@ static inline void tb_alloc_page(TranslationBlock *tb,
 #endif
     }
 */
-#else
+//#else
     /* if some code is already present, then the pages are already
        protected. So we handle the case where only the first TB is
        allocated in a physical page */
+/*
     if (!page_already_protected) {
         tlb_protect_code(page_addr);
     }
 #endif
+*/
 }
 
 /* add a new TB and link it to the physical page tables. phys_page2 is
