@@ -176,11 +176,15 @@ static const unsigned long reserved_va = 0xf7000000; //extern unsigned long rese
 #define TARGET_PAGE_ALIGN(addr) (((addr) + TARGET_PAGE_SIZE - 1) & TARGET_PAGE_MASK)
 
 /* ??? These should be the larger of uintptr_t and target_ulong.  */
-extern uintptr_t qemu_real_host_page_size;
-extern uintptr_t qemu_host_page_size;
-extern uintptr_t qemu_host_page_mask;
-
-#define HOST_PAGE_ALIGN(addr) (((addr) + qemu_host_page_size - 1) & qemu_host_page_mask)
+/* MADE CONSTANT FOR CGC */
+#ifndef __amd64__
+# error MADE CONSTS FOR x86 FOR CGC
+#endif
+static const uintptr_t qemu_real_host_page_size = 4096;
+static const uintptr_t qemu_host_page_size = 4096;
+static const uintptr_t qemu_host_page_mask = ~(((uintptr_t) 4096) - 1);
+#define HOST_PAGE_ALIGN(addr) (((addr) + ((uintptr_t) 4096) - 1) & ~(((uintptr_t) 4096) - 1))
+//#define HOST_PAGE_ALIGN(addr) (((addr) + qemu_host_page_size - 1) & qemu_host_page_mask)
 
 /* same as PROT_xxx */
 #define PAGE_READ      0x0001
