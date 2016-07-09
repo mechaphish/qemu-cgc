@@ -16,85 +16,17 @@
 #include "qemu.h"
 #include "disas/disas.h"
 
+#ifndef TARGET_I386
+#error CGC is i386 only!
+#endif
+
+
 #ifdef _ARCH_PPC64
-#undef ARCH_DLINFO
-#undef ELF_PLATFORM
-#undef ELF_HWCAP
-#undef ELF_HWCAP2
-#undef ELF_CLASS
-#undef ELF_DATA
-#undef ELF_ARCH
+#error removed
 #endif
 
 #define ELF_OSABI   ELFOSABI_SYSV
 
-/* from personality.h */
-
-/*
- * Flags for bug emulation.
- *
- * These occupy the top three bytes.
- */
-enum {
-    ADDR_NO_RANDOMIZE = 0x0040000,      /* disable randomization of VA space */
-    FDPIC_FUNCPTRS =    0x0080000,      /* userspace function ptrs point to
-                                           descriptors (signal handling) */
-    MMAP_PAGE_ZERO =    0x0100000,
-    ADDR_COMPAT_LAYOUT = 0x0200000,
-    READ_IMPLIES_EXEC = 0x0400000,
-    ADDR_LIMIT_32BIT =  0x0800000,
-    SHORT_INODE =       0x1000000,
-    WHOLE_SECONDS =     0x2000000,
-    STICKY_TIMEOUTS =   0x4000000,
-    ADDR_LIMIT_3GB =    0x8000000,
-};
-
-/*
- * Personality types.
- *
- * These go in the low byte.  Avoid using the top bit, it will
- * conflict with error returns.
- */
-enum {
-    PER_LINUX =         0x0000,
-    PER_LINUX_32BIT =   0x0000 | ADDR_LIMIT_32BIT,
-    PER_LINUX_FDPIC =   0x0000 | FDPIC_FUNCPTRS,
-    PER_SVR4 =          0x0001 | STICKY_TIMEOUTS | MMAP_PAGE_ZERO,
-    PER_SVR3 =          0x0002 | STICKY_TIMEOUTS | SHORT_INODE,
-    PER_SCOSVR3 =       0x0003 | STICKY_TIMEOUTS | WHOLE_SECONDS | SHORT_INODE,
-    PER_OSR5 =          0x0003 | STICKY_TIMEOUTS | WHOLE_SECONDS,
-    PER_WYSEV386 =      0x0004 | STICKY_TIMEOUTS | SHORT_INODE,
-    PER_ISCR4 =         0x0005 | STICKY_TIMEOUTS,
-    PER_BSD =           0x0006,
-    PER_SUNOS =         0x0006 | STICKY_TIMEOUTS,
-    PER_XENIX =         0x0007 | STICKY_TIMEOUTS | SHORT_INODE,
-    PER_LINUX32 =       0x0008,
-    PER_LINUX32_3GB =   0x0008 | ADDR_LIMIT_3GB,
-    PER_IRIX32 =        0x0009 | STICKY_TIMEOUTS,/* IRIX5 32-bit */
-    PER_IRIXN32 =       0x000a | STICKY_TIMEOUTS,/* IRIX6 new 32-bit */
-    PER_IRIX64 =        0x000b | STICKY_TIMEOUTS,/* IRIX6 64-bit */
-    PER_RISCOS =        0x000c,
-    PER_SOLARIS =       0x000d | STICKY_TIMEOUTS,
-    PER_UW7 =           0x000e | STICKY_TIMEOUTS | MMAP_PAGE_ZERO,
-    PER_OSF4 =          0x000f,                  /* OSF/1 v4 */
-    PER_HPUX =          0x0010,
-    PER_MASK =          0x00ff,
-};
-
-/*
- * Return the base personality without flags.
- */
-#define personality(pers)       (pers & PER_MASK)
-
-/* this flag is uneffective under linux too, should be deleted */
-#ifndef MAP_DENYWRITE
-#define MAP_DENYWRITE 0
-#endif
-
-/* should probably go in elf.h */
-#ifndef ELIBBAD
-#define ELIBBAD 80
-#endif
 
 #ifdef TARGET_WORDS_BIGENDIAN
 #define ELF_DATA        ELFDATA2MSB
@@ -103,8 +35,7 @@ enum {
 #endif
 
 #ifdef TARGET_ABI_MIPSN32
-typedef abi_ullong      target_elf_greg_t;
-#define tswapreg(ptr)   tswap64(ptr)
+#error removed
 #else
 typedef abi_ulong       target_elf_greg_t;
 #define tswapreg(ptr)   tswapal(ptr)
@@ -119,88 +50,10 @@ typedef abi_uint        target_gid_t;
 #endif
 typedef abi_int         target_pid_t;
 
-#ifdef TARGET_I386
 
-#define ELF_PLATFORM get_elf_platform()
 
-static const char *get_elf_platform(void)
-{
-    static char elf_platform[] = "i386";
-    int family = object_property_get_int(OBJECT(thread_cpu), "family", NULL);
-    if (family > 6)
-        family = 6;
-    if (family >= 3)
-        elf_platform[1] = '0' + family;
-    return elf_platform;
-}
-
-#define ELF_HWCAP get_elf_hwcap()
-
-static uint32_t get_elf_hwcap(void)
-{
-    X86CPU *cpu = X86_CPU(thread_cpu);
-
-    return cpu->env.features[FEAT_1_EDX];
-}
-
-#ifdef TARGET_X86_64
-#define ELF_START_MMAP 0x2aaaaab000ULL
-#define elf_check_arch(x) ( ((x) == ELF_ARCH) )
-
-#define ELF_CLASS      ELFCLASS64
-#define ELF_ARCH       EM_X86_64
-
-static inline void init_thread(struct target_pt_regs *regs, struct image_info *infop)
-{
-    regs->rax = 0;
-    regs->rsp = infop->start_stack;
-    regs->rip = infop->entry;
-}
-
-#define ELF_NREG    27
-typedef target_elf_greg_t  target_elf_gregset_t[ELF_NREG];
-
-/*
- * Note that ELF_NREG should be 29 as there should be place for
- * TRAPNO and ERR "registers" as well but linux doesn't dump
- * those.
- *
- * See linux kernel: arch/x86/include/asm/elf.h
- */
-static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUX86State *env)
-{
-    (*regs)[0] = env->regs[15];
-    (*regs)[1] = env->regs[14];
-    (*regs)[2] = env->regs[13];
-    (*regs)[3] = env->regs[12];
-    (*regs)[4] = env->regs[R_EBP];
-    (*regs)[5] = env->regs[R_EBX];
-    (*regs)[6] = env->regs[11];
-    (*regs)[7] = env->regs[10];
-    (*regs)[8] = env->regs[9];
-    (*regs)[9] = env->regs[8];
-    (*regs)[10] = env->regs[R_EAX];
-    (*regs)[11] = env->regs[R_ECX];
-    (*regs)[12] = env->regs[R_EDX];
-    (*regs)[13] = env->regs[R_ESI];
-    (*regs)[14] = env->regs[R_EDI];
-    (*regs)[15] = env->regs[R_EAX]; /* XXX */
-    (*regs)[16] = env->eip;
-    (*regs)[17] = env->segs[R_CS].selector & 0xffff;
-    (*regs)[18] = env->eflags;
-    (*regs)[19] = env->regs[R_ESP];
-    (*regs)[20] = env->segs[R_SS].selector & 0xffff;
-    (*regs)[21] = env->segs[R_FS].selector & 0xffff;
-    (*regs)[22] = env->segs[R_GS].selector & 0xffff;
-    (*regs)[23] = env->segs[R_DS].selector & 0xffff;
-    (*regs)[24] = env->segs[R_ES].selector & 0xffff;
-    (*regs)[25] = env->segs[R_FS].selector & 0xffff;
-    (*regs)[26] = env->segs[R_GS].selector & 0xffff;
-}
-
-#else
-
-#define ELF_START_MMAP 0x80000000
+/* CGC: copy from VM */
+#define CGC_START_MMAP 0xb8000000
 
 /*
  * This is used to ensure we don't load something for the wrong architecture.
@@ -213,7 +66,9 @@ static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUX86State *en
 #define ELF_CLASS       ELFCLASS32
 #define ELF_ARCH        EM_386
 
+/* https://github.com/CyberGrandChallenge/libcgc/blob/master/cgcabi.md */
 #define CGC_MAGIC_PAGE_ADDR 0x4347c000
+#define CGC_INITIAL_SP 0xbaaaaffcu
 
 static inline void init_thread(struct target_pt_regs *regs,
                                struct image_info *infop)
@@ -233,6 +88,16 @@ static inline void init_thread(struct target_pt_regs *regs,
     /* initialize %ecx to the value of the address of the CGC magic
        page */
     regs->ecx = CGC_MAGIC_PAGE_ADDR;
+
+    regs->eax = regs->ebx = regs->edi = regs->esi = regs->ebp = 0;
+
+    if (regs->esp != CGC_INITIAL_SP) {
+        fprintf(stderr, "OUR QEMU/CGC ERROR: init_thread's ESP != DARPA's mandated one (0x%08x != 0x%08x)\n", (unsigned) regs->esp, CGC_INITIAL_SP);
+        exit(-90);
+    }
+
+    /* CGC TODO: check/set eflags, floating point, XMM [J] */
+    /* Note: segments are initialized once and for all in main.c (incl. GDT/IDT/...) */
 }
 
 #define ELF_NREG    17
@@ -265,943 +130,11 @@ static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUX86State *en
     (*regs)[15] = env->regs[R_ESP];
     (*regs)[16] = env->segs[R_SS].selector & 0xffff;
 }
-#endif
 
 #define USE_ELF_CORE_DUMP
 #define ELF_EXEC_PAGESIZE       4096
 
-#endif
 
-#ifdef TARGET_ARM
-
-#ifndef TARGET_AARCH64
-/* 32 bit ARM definitions */
-
-#define ELF_START_MMAP 0x80000000
-
-#define elf_check_arch(x) ((x) == ELF_MACHINE)
-
-#define ELF_ARCH        ELF_MACHINE
-#define ELF_CLASS       ELFCLASS32
-
-static inline void init_thread(struct target_pt_regs *regs,
-                               struct image_info *infop)
-{
-    abi_long stack = infop->start_stack;
-    memset(regs, 0, sizeof(*regs));
-
-    regs->ARM_cpsr = 0x10;
-    if (infop->entry & 1)
-        regs->ARM_cpsr |= CPSR_T;
-    regs->ARM_pc = infop->entry & 0xfffffffe;
-    regs->ARM_sp = infop->start_stack;
-    /* FIXME - what to for failure of get_user()? */
-    get_user_ual(regs->ARM_r2, stack + 8); /* envp */
-    get_user_ual(regs->ARM_r1, stack + 4); /* envp */
-    /* XXX: it seems that r0 is zeroed after ! */
-    regs->ARM_r0 = 0;
-    /* For uClinux PIC binaries.  */
-    /* XXX: Linux does this only on ARM with no MMU (do we care ?) */
-    regs->ARM_r10 = infop->start_data;
-}
-
-#define ELF_NREG    18
-typedef target_elf_greg_t  target_elf_gregset_t[ELF_NREG];
-
-static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUARMState *env)
-{
-    (*regs)[0] = tswapreg(env->regs[0]);
-    (*regs)[1] = tswapreg(env->regs[1]);
-    (*regs)[2] = tswapreg(env->regs[2]);
-    (*regs)[3] = tswapreg(env->regs[3]);
-    (*regs)[4] = tswapreg(env->regs[4]);
-    (*regs)[5] = tswapreg(env->regs[5]);
-    (*regs)[6] = tswapreg(env->regs[6]);
-    (*regs)[7] = tswapreg(env->regs[7]);
-    (*regs)[8] = tswapreg(env->regs[8]);
-    (*regs)[9] = tswapreg(env->regs[9]);
-    (*regs)[10] = tswapreg(env->regs[10]);
-    (*regs)[11] = tswapreg(env->regs[11]);
-    (*regs)[12] = tswapreg(env->regs[12]);
-    (*regs)[13] = tswapreg(env->regs[13]);
-    (*regs)[14] = tswapreg(env->regs[14]);
-    (*regs)[15] = tswapreg(env->regs[15]);
-
-    (*regs)[16] = tswapreg(cpsr_read((CPUARMState *)env));
-    (*regs)[17] = tswapreg(env->regs[0]); /* XXX */
-}
-
-#define USE_ELF_CORE_DUMP
-#define ELF_EXEC_PAGESIZE       4096
-
-enum
-{
-    ARM_HWCAP_ARM_SWP       = 1 << 0,
-    ARM_HWCAP_ARM_HALF      = 1 << 1,
-    ARM_HWCAP_ARM_THUMB     = 1 << 2,
-    ARM_HWCAP_ARM_26BIT     = 1 << 3,
-    ARM_HWCAP_ARM_FAST_MULT = 1 << 4,
-    ARM_HWCAP_ARM_FPA       = 1 << 5,
-    ARM_HWCAP_ARM_VFP       = 1 << 6,
-    ARM_HWCAP_ARM_EDSP      = 1 << 7,
-    ARM_HWCAP_ARM_JAVA      = 1 << 8,
-    ARM_HWCAP_ARM_IWMMXT    = 1 << 9,
-    ARM_HWCAP_ARM_CRUNCH    = 1 << 10,
-    ARM_HWCAP_ARM_THUMBEE   = 1 << 11,
-    ARM_HWCAP_ARM_NEON      = 1 << 12,
-    ARM_HWCAP_ARM_VFPv3     = 1 << 13,
-    ARM_HWCAP_ARM_VFPv3D16  = 1 << 14,
-    ARM_HWCAP_ARM_TLS       = 1 << 15,
-    ARM_HWCAP_ARM_VFPv4     = 1 << 16,
-    ARM_HWCAP_ARM_IDIVA     = 1 << 17,
-    ARM_HWCAP_ARM_IDIVT     = 1 << 18,
-    ARM_HWCAP_ARM_VFPD32    = 1 << 19,
-    ARM_HWCAP_ARM_LPAE      = 1 << 20,
-    ARM_HWCAP_ARM_EVTSTRM   = 1 << 21,
-};
-
-enum {
-    ARM_HWCAP2_ARM_AES      = 1 << 0,
-    ARM_HWCAP2_ARM_PMULL    = 1 << 1,
-    ARM_HWCAP2_ARM_SHA1     = 1 << 2,
-    ARM_HWCAP2_ARM_SHA2     = 1 << 3,
-    ARM_HWCAP2_ARM_CRC32    = 1 << 4,
-};
-
-/* The commpage only exists for 32 bit kernels */
-
-#define TARGET_HAS_VALIDATE_GUEST_SPACE
-/* Return 1 if the proposed guest space is suitable for the guest.
- * Return 0 if the proposed guest space isn't suitable, but another
- * address space should be tried.
- * Return -1 if there is no way the proposed guest space can be
- * valid regardless of the base.
- * The guest code may leave a page mapped and populate it if the
- * address is suitable.
- */
-static int validate_guest_space(unsigned long guest_base,
-                                unsigned long guest_size)
-{
-    unsigned long real_start, test_page_addr;
-
-    /* We need to check that we can force a fault on access to the
-     * commpage at 0xffff0fxx
-     */
-    test_page_addr = guest_base + (0xffff0f00 & qemu_host_page_mask);
-
-    /* If the commpage lies within the already allocated guest space,
-     * then there is no way we can allocate it.
-     */
-    if (test_page_addr >= guest_base
-        && test_page_addr <= (guest_base + guest_size)) {
-        return -1;
-    }
-
-    /* Note it needs to be writeable to let us initialise it */
-    real_start = (unsigned long)
-                 mmap((void *)test_page_addr, qemu_host_page_size,
-                     PROT_READ | PROT_WRITE,
-                     MAP_ANONYMOUS | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-
-    /* If we can't map it then try another address */
-    if (real_start == -1ul) {
-        return 0;
-    }
-
-    if (real_start != test_page_addr) {
-        /* OS didn't put the page where we asked - unmap and reject */
-        munmap((void *)real_start, qemu_host_page_size);
-        return 0;
-    }
-
-    /* Leave the page mapped
-     * Populate it (mmap should have left it all 0'd)
-     */
-
-    /* Kernel helper versions */
-    __put_user(5, (uint32_t *)g2h(0xffff0ffcul));
-
-    /* Now it's populated make it RO */
-    if (mprotect((void *)test_page_addr, qemu_host_page_size, PROT_READ)) {
-        perror("Protecting guest commpage");
-        exit(-1);
-    }
-
-    return 1; /* All good */
-}
-
-#define ELF_HWCAP get_elf_hwcap()
-#define ELF_HWCAP2 get_elf_hwcap2()
-
-static uint32_t get_elf_hwcap(void)
-{
-    ARMCPU *cpu = ARM_CPU(thread_cpu);
-    uint32_t hwcaps = 0;
-
-    hwcaps |= ARM_HWCAP_ARM_SWP;
-    hwcaps |= ARM_HWCAP_ARM_HALF;
-    hwcaps |= ARM_HWCAP_ARM_THUMB;
-    hwcaps |= ARM_HWCAP_ARM_FAST_MULT;
-
-    /* probe for the extra features */
-#define GET_FEATURE(feat, hwcap) \
-    do { if (arm_feature(&cpu->env, feat)) { hwcaps |= hwcap; } } while (0)
-    /* EDSP is in v5TE and above, but all our v5 CPUs are v5TE */
-    GET_FEATURE(ARM_FEATURE_V5, ARM_HWCAP_ARM_EDSP);
-    GET_FEATURE(ARM_FEATURE_VFP, ARM_HWCAP_ARM_VFP);
-    GET_FEATURE(ARM_FEATURE_IWMMXT, ARM_HWCAP_ARM_IWMMXT);
-    GET_FEATURE(ARM_FEATURE_THUMB2EE, ARM_HWCAP_ARM_THUMBEE);
-    GET_FEATURE(ARM_FEATURE_NEON, ARM_HWCAP_ARM_NEON);
-    GET_FEATURE(ARM_FEATURE_VFP3, ARM_HWCAP_ARM_VFPv3);
-    GET_FEATURE(ARM_FEATURE_V6K, ARM_HWCAP_ARM_TLS);
-    GET_FEATURE(ARM_FEATURE_VFP4, ARM_HWCAP_ARM_VFPv4);
-    GET_FEATURE(ARM_FEATURE_ARM_DIV, ARM_HWCAP_ARM_IDIVA);
-    GET_FEATURE(ARM_FEATURE_THUMB_DIV, ARM_HWCAP_ARM_IDIVT);
-    /* All QEMU's VFPv3 CPUs have 32 registers, see VFP_DREG in translate.c.
-     * Note that the ARM_HWCAP_ARM_VFPv3D16 bit is always the inverse of
-     * ARM_HWCAP_ARM_VFPD32 (and so always clear for QEMU); it is unrelated
-     * to our VFP_FP16 feature bit.
-     */
-    GET_FEATURE(ARM_FEATURE_VFP3, ARM_HWCAP_ARM_VFPD32);
-    GET_FEATURE(ARM_FEATURE_LPAE, ARM_HWCAP_ARM_LPAE);
-
-    return hwcaps;
-}
-
-static uint32_t get_elf_hwcap2(void)
-{
-    ARMCPU *cpu = ARM_CPU(thread_cpu);
-    uint32_t hwcaps = 0;
-
-    GET_FEATURE(ARM_FEATURE_V8_AES, ARM_HWCAP2_ARM_AES);
-    GET_FEATURE(ARM_FEATURE_V8_PMULL, ARM_HWCAP2_ARM_PMULL);
-    GET_FEATURE(ARM_FEATURE_V8_SHA1, ARM_HWCAP2_ARM_SHA1);
-    GET_FEATURE(ARM_FEATURE_V8_SHA256, ARM_HWCAP2_ARM_SHA2);
-    GET_FEATURE(ARM_FEATURE_CRC, ARM_HWCAP2_ARM_CRC32);
-    return hwcaps;
-}
-
-#undef GET_FEATURE
-
-#else
-/* 64 bit ARM definitions */
-#define ELF_START_MMAP 0x80000000
-
-#define elf_check_arch(x) ((x) == ELF_MACHINE)
-
-#define ELF_ARCH        ELF_MACHINE
-#define ELF_CLASS       ELFCLASS64
-#define ELF_PLATFORM    "aarch64"
-
-static inline void init_thread(struct target_pt_regs *regs,
-                               struct image_info *infop)
-{
-    abi_long stack = infop->start_stack;
-    memset(regs, 0, sizeof(*regs));
-
-    regs->pc = infop->entry & ~0x3ULL;
-    regs->sp = stack;
-}
-
-#define ELF_NREG    34
-typedef target_elf_greg_t  target_elf_gregset_t[ELF_NREG];
-
-static void elf_core_copy_regs(target_elf_gregset_t *regs,
-                               const CPUARMState *env)
-{
-    int i;
-
-    for (i = 0; i < 32; i++) {
-        (*regs)[i] = tswapreg(env->xregs[i]);
-    }
-    (*regs)[32] = tswapreg(env->pc);
-    (*regs)[33] = tswapreg(pstate_read((CPUARMState *)env));
-}
-
-#define USE_ELF_CORE_DUMP
-#define ELF_EXEC_PAGESIZE       4096
-
-enum {
-    ARM_HWCAP_A64_FP            = 1 << 0,
-    ARM_HWCAP_A64_ASIMD         = 1 << 1,
-    ARM_HWCAP_A64_EVTSTRM       = 1 << 2,
-    ARM_HWCAP_A64_AES           = 1 << 3,
-    ARM_HWCAP_A64_PMULL         = 1 << 4,
-    ARM_HWCAP_A64_SHA1          = 1 << 5,
-    ARM_HWCAP_A64_SHA2          = 1 << 6,
-    ARM_HWCAP_A64_CRC32         = 1 << 7,
-};
-
-#define ELF_HWCAP get_elf_hwcap()
-
-static uint32_t get_elf_hwcap(void)
-{
-    ARMCPU *cpu = ARM_CPU(thread_cpu);
-    uint32_t hwcaps = 0;
-
-    hwcaps |= ARM_HWCAP_A64_FP;
-    hwcaps |= ARM_HWCAP_A64_ASIMD;
-
-    /* probe for the extra features */
-#define GET_FEATURE(feat, hwcap) \
-    do { if (arm_feature(&cpu->env, feat)) { hwcaps |= hwcap; } } while (0)
-    GET_FEATURE(ARM_FEATURE_V8_AES, ARM_HWCAP_A64_AES);
-    GET_FEATURE(ARM_FEATURE_V8_PMULL, ARM_HWCAP_A64_PMULL);
-    GET_FEATURE(ARM_FEATURE_V8_SHA1, ARM_HWCAP_A64_SHA1);
-    GET_FEATURE(ARM_FEATURE_V8_SHA256, ARM_HWCAP_A64_SHA2);
-    GET_FEATURE(ARM_FEATURE_CRC, ARM_HWCAP_A64_CRC32);
-#undef GET_FEATURE
-
-    return hwcaps;
-}
-
-#endif /* not TARGET_AARCH64 */
-#endif /* TARGET_ARM */
-
-#ifdef TARGET_UNICORE32
-
-#define ELF_START_MMAP          0x80000000
-
-#define elf_check_arch(x)       ((x) == EM_UNICORE32)
-
-#define ELF_CLASS               ELFCLASS32
-#define ELF_DATA                ELFDATA2LSB
-#define ELF_ARCH                EM_UNICORE32
-
-static inline void init_thread(struct target_pt_regs *regs,
-        struct image_info *infop)
-{
-    abi_long stack = infop->start_stack;
-    memset(regs, 0, sizeof(*regs));
-    regs->UC32_REG_asr = 0x10;
-    regs->UC32_REG_pc = infop->entry & 0xfffffffe;
-    regs->UC32_REG_sp = infop->start_stack;
-    /* FIXME - what to for failure of get_user()? */
-    get_user_ual(regs->UC32_REG_02, stack + 8); /* envp */
-    get_user_ual(regs->UC32_REG_01, stack + 4); /* envp */
-    /* XXX: it seems that r0 is zeroed after ! */
-    regs->UC32_REG_00 = 0;
-}
-
-#define ELF_NREG    34
-typedef target_elf_greg_t  target_elf_gregset_t[ELF_NREG];
-
-static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUUniCore32State *env)
-{
-    (*regs)[0] = env->regs[0];
-    (*regs)[1] = env->regs[1];
-    (*regs)[2] = env->regs[2];
-    (*regs)[3] = env->regs[3];
-    (*regs)[4] = env->regs[4];
-    (*regs)[5] = env->regs[5];
-    (*regs)[6] = env->regs[6];
-    (*regs)[7] = env->regs[7];
-    (*regs)[8] = env->regs[8];
-    (*regs)[9] = env->regs[9];
-    (*regs)[10] = env->regs[10];
-    (*regs)[11] = env->regs[11];
-    (*regs)[12] = env->regs[12];
-    (*regs)[13] = env->regs[13];
-    (*regs)[14] = env->regs[14];
-    (*regs)[15] = env->regs[15];
-    (*regs)[16] = env->regs[16];
-    (*regs)[17] = env->regs[17];
-    (*regs)[18] = env->regs[18];
-    (*regs)[19] = env->regs[19];
-    (*regs)[20] = env->regs[20];
-    (*regs)[21] = env->regs[21];
-    (*regs)[22] = env->regs[22];
-    (*regs)[23] = env->regs[23];
-    (*regs)[24] = env->regs[24];
-    (*regs)[25] = env->regs[25];
-    (*regs)[26] = env->regs[26];
-    (*regs)[27] = env->regs[27];
-    (*regs)[28] = env->regs[28];
-    (*regs)[29] = env->regs[29];
-    (*regs)[30] = env->regs[30];
-    (*regs)[31] = env->regs[31];
-
-    (*regs)[32] = cpu_asr_read((CPUUniCore32State *)env);
-    (*regs)[33] = env->regs[0]; /* XXX */
-}
-
-#define USE_ELF_CORE_DUMP
-#define ELF_EXEC_PAGESIZE               4096
-
-#define ELF_HWCAP                       (UC32_HWCAP_CMOV | UC32_HWCAP_UCF64)
-
-#endif
-
-#ifdef TARGET_SPARC
-#ifdef TARGET_SPARC64
-
-#define ELF_START_MMAP 0x80000000
-#define ELF_HWCAP  (HWCAP_SPARC_FLUSH | HWCAP_SPARC_STBAR | HWCAP_SPARC_SWAP \
-                    | HWCAP_SPARC_MULDIV | HWCAP_SPARC_V9)
-#ifndef TARGET_ABI32
-#define elf_check_arch(x) ( (x) == EM_SPARCV9 || (x) == EM_SPARC32PLUS )
-#else
-#define elf_check_arch(x) ( (x) == EM_SPARC32PLUS || (x) == EM_SPARC )
-#endif
-
-#define ELF_CLASS   ELFCLASS64
-#define ELF_ARCH    EM_SPARCV9
-
-#define STACK_BIAS              2047
-
-static inline void init_thread(struct target_pt_regs *regs,
-                               struct image_info *infop)
-{
-#ifndef TARGET_ABI32
-    regs->tstate = 0;
-#endif
-    regs->pc = infop->entry;
-    regs->npc = regs->pc + 4;
-    regs->y = 0;
-#ifdef TARGET_ABI32
-    regs->u_regs[14] = infop->start_stack - 16 * 4;
-#else
-    if (personality(infop->personality) == PER_LINUX32)
-        regs->u_regs[14] = infop->start_stack - 16 * 4;
-    else
-        regs->u_regs[14] = infop->start_stack - 16 * 8 - STACK_BIAS;
-#endif
-}
-
-#else
-#define ELF_START_MMAP 0x80000000
-#define ELF_HWCAP  (HWCAP_SPARC_FLUSH | HWCAP_SPARC_STBAR | HWCAP_SPARC_SWAP \
-                    | HWCAP_SPARC_MULDIV)
-#define elf_check_arch(x) ( (x) == EM_SPARC )
-
-#define ELF_CLASS   ELFCLASS32
-#define ELF_ARCH    EM_SPARC
-
-static inline void init_thread(struct target_pt_regs *regs,
-                               struct image_info *infop)
-{
-    regs->psr = 0;
-    regs->pc = infop->entry;
-    regs->npc = regs->pc + 4;
-    regs->y = 0;
-    regs->u_regs[14] = infop->start_stack - 16 * 4;
-}
-
-#endif
-#endif
-
-#ifdef TARGET_PPC
-
-#define ELF_START_MMAP 0x80000000
-
-#if defined(TARGET_PPC64) && !defined(TARGET_ABI32)
-
-#define elf_check_arch(x) ( (x) == EM_PPC64 )
-
-#define ELF_CLASS       ELFCLASS64
-
-#else
-
-#define elf_check_arch(x) ( (x) == EM_PPC )
-
-#define ELF_CLASS       ELFCLASS32
-
-#endif
-
-#define ELF_ARCH        EM_PPC
-
-/* Feature masks for the Aux Vector Hardware Capabilities (AT_HWCAP).
-   See arch/powerpc/include/asm/cputable.h.  */
-enum {
-    QEMU_PPC_FEATURE_32 = 0x80000000,
-    QEMU_PPC_FEATURE_64 = 0x40000000,
-    QEMU_PPC_FEATURE_601_INSTR = 0x20000000,
-    QEMU_PPC_FEATURE_HAS_ALTIVEC = 0x10000000,
-    QEMU_PPC_FEATURE_HAS_FPU = 0x08000000,
-    QEMU_PPC_FEATURE_HAS_MMU = 0x04000000,
-    QEMU_PPC_FEATURE_HAS_4xxMAC = 0x02000000,
-    QEMU_PPC_FEATURE_UNIFIED_CACHE = 0x01000000,
-    QEMU_PPC_FEATURE_HAS_SPE = 0x00800000,
-    QEMU_PPC_FEATURE_HAS_EFP_SINGLE = 0x00400000,
-    QEMU_PPC_FEATURE_HAS_EFP_DOUBLE = 0x00200000,
-    QEMU_PPC_FEATURE_NO_TB = 0x00100000,
-    QEMU_PPC_FEATURE_POWER4 = 0x00080000,
-    QEMU_PPC_FEATURE_POWER5 = 0x00040000,
-    QEMU_PPC_FEATURE_POWER5_PLUS = 0x00020000,
-    QEMU_PPC_FEATURE_CELL = 0x00010000,
-    QEMU_PPC_FEATURE_BOOKE = 0x00008000,
-    QEMU_PPC_FEATURE_SMT = 0x00004000,
-    QEMU_PPC_FEATURE_ICACHE_SNOOP = 0x00002000,
-    QEMU_PPC_FEATURE_ARCH_2_05 = 0x00001000,
-    QEMU_PPC_FEATURE_PA6T = 0x00000800,
-    QEMU_PPC_FEATURE_HAS_DFP = 0x00000400,
-    QEMU_PPC_FEATURE_POWER6_EXT = 0x00000200,
-    QEMU_PPC_FEATURE_ARCH_2_06 = 0x00000100,
-    QEMU_PPC_FEATURE_HAS_VSX = 0x00000080,
-    QEMU_PPC_FEATURE_PSERIES_PERFMON_COMPAT = 0x00000040,
-
-    QEMU_PPC_FEATURE_TRUE_LE = 0x00000002,
-    QEMU_PPC_FEATURE_PPC_LE = 0x00000001,
-
-    /* Feature definitions in AT_HWCAP2.  */
-    QEMU_PPC_FEATURE2_ARCH_2_07 = 0x80000000, /* ISA 2.07 */
-    QEMU_PPC_FEATURE2_HAS_HTM = 0x40000000, /* Hardware Transactional Memory */
-    QEMU_PPC_FEATURE2_HAS_DSCR = 0x20000000, /* Data Stream Control Register */
-    QEMU_PPC_FEATURE2_HAS_EBB = 0x10000000, /* Event Base Branching */
-    QEMU_PPC_FEATURE2_HAS_ISEL = 0x08000000, /* Integer Select */
-    QEMU_PPC_FEATURE2_HAS_TAR = 0x04000000, /* Target Address Register */
-};
-
-#define ELF_HWCAP get_elf_hwcap()
-
-static uint32_t get_elf_hwcap(void)
-{
-    PowerPCCPU *cpu = POWERPC_CPU(thread_cpu);
-    uint32_t features = 0;
-
-    /* We don't have to be terribly complete here; the high points are
-       Altivec/FP/SPE support.  Anything else is just a bonus.  */
-#define GET_FEATURE(flag, feature)                                      \
-    do { if (cpu->env.insns_flags & flag) { features |= feature; } } while (0)
-#define GET_FEATURE2(flag, feature)                                      \
-    do { if (cpu->env.insns_flags2 & flag) { features |= feature; } } while (0)
-    GET_FEATURE(PPC_64B, QEMU_PPC_FEATURE_64);
-    GET_FEATURE(PPC_FLOAT, QEMU_PPC_FEATURE_HAS_FPU);
-    GET_FEATURE(PPC_ALTIVEC, QEMU_PPC_FEATURE_HAS_ALTIVEC);
-    GET_FEATURE(PPC_SPE, QEMU_PPC_FEATURE_HAS_SPE);
-    GET_FEATURE(PPC_SPE_SINGLE, QEMU_PPC_FEATURE_HAS_EFP_SINGLE);
-    GET_FEATURE(PPC_SPE_DOUBLE, QEMU_PPC_FEATURE_HAS_EFP_DOUBLE);
-    GET_FEATURE(PPC_BOOKE, QEMU_PPC_FEATURE_BOOKE);
-    GET_FEATURE(PPC_405_MAC, QEMU_PPC_FEATURE_HAS_4xxMAC);
-    GET_FEATURE2(PPC2_DFP, QEMU_PPC_FEATURE_HAS_DFP);
-    GET_FEATURE2(PPC2_VSX, QEMU_PPC_FEATURE_HAS_VSX);
-    GET_FEATURE2((PPC2_PERM_ISA206 | PPC2_DIVE_ISA206 | PPC2_ATOMIC_ISA206 |
-                  PPC2_FP_CVT_ISA206 | PPC2_FP_TST_ISA206),
-                  QEMU_PPC_FEATURE_ARCH_2_06);
-#undef GET_FEATURE
-#undef GET_FEATURE2
-
-    return features;
-}
-
-#define ELF_HWCAP2 get_elf_hwcap2()
-
-static uint32_t get_elf_hwcap2(void)
-{
-    PowerPCCPU *cpu = POWERPC_CPU(thread_cpu);
-    uint32_t features = 0;
-
-#define GET_FEATURE(flag, feature)                                      \
-    do { if (cpu->env.insns_flags & flag) { features |= feature; } } while (0)
-#define GET_FEATURE2(flag, feature)                                      \
-    do { if (cpu->env.insns_flags2 & flag) { features |= feature; } } while (0)
-
-    GET_FEATURE(PPC_ISEL, QEMU_PPC_FEATURE2_HAS_ISEL);
-    GET_FEATURE2(PPC2_BCTAR_ISA207, QEMU_PPC_FEATURE2_HAS_TAR);
-    GET_FEATURE2((PPC2_BCTAR_ISA207 | PPC2_LSQ_ISA207 | PPC2_ALTIVEC_207 |
-                  PPC2_ISA207S), QEMU_PPC_FEATURE2_ARCH_2_07);
-
-#undef GET_FEATURE
-#undef GET_FEATURE2
-
-    return features;
-}
-
-/*
- * The requirements here are:
- * - keep the final alignment of sp (sp & 0xf)
- * - make sure the 32-bit value at the first 16 byte aligned position of
- *   AUXV is greater than 16 for glibc compatibility.
- *   AT_IGNOREPPC is used for that.
- * - for compatibility with glibc ARCH_DLINFO must always be defined on PPC,
- *   even if DLINFO_ARCH_ITEMS goes to zero or is undefined.
- */
-#define DLINFO_ARCH_ITEMS       5
-#define ARCH_DLINFO                                     \
-    do {                                                \
-        PowerPCCPU *cpu = POWERPC_CPU(thread_cpu);              \
-        NEW_AUX_ENT(AT_DCACHEBSIZE, cpu->env.dcache_line_size); \
-        NEW_AUX_ENT(AT_ICACHEBSIZE, cpu->env.icache_line_size); \
-        NEW_AUX_ENT(AT_UCACHEBSIZE, 0);                 \
-        /*                                              \
-         * Now handle glibc compatibility.              \
-         */                                             \
-        NEW_AUX_ENT(AT_IGNOREPPC, AT_IGNOREPPC);        \
-        NEW_AUX_ENT(AT_IGNOREPPC, AT_IGNOREPPC);        \
-    } while (0)
-
-static inline void init_thread(struct target_pt_regs *_regs, struct image_info *infop)
-{
-    _regs->gpr[1] = infop->start_stack;
-#if defined(TARGET_PPC64) && !defined(TARGET_ABI32)
-    if (get_ppc64_abi(infop) < 2) {
-        uint64_t val;
-        get_user_u64(val, infop->entry + 8);
-        _regs->gpr[2] = val + infop->load_bias;
-        get_user_u64(val, infop->entry);
-        infop->entry = val + infop->load_bias;
-    } else {
-        _regs->gpr[12] = infop->entry;  /* r12 set to global entry address */
-    }
-#endif
-    _regs->nip = infop->entry;
-}
-
-/* See linux kernel: arch/powerpc/include/asm/elf.h.  */
-#define ELF_NREG 48
-typedef target_elf_greg_t target_elf_gregset_t[ELF_NREG];
-
-static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUPPCState *env)
-{
-    int i;
-    target_ulong ccr = 0;
-
-    for (i = 0; i < ARRAY_SIZE(env->gpr); i++) {
-        (*regs)[i] = tswapreg(env->gpr[i]);
-    }
-
-    (*regs)[32] = tswapreg(env->nip);
-    (*regs)[33] = tswapreg(env->msr);
-    (*regs)[35] = tswapreg(env->ctr);
-    (*regs)[36] = tswapreg(env->lr);
-    (*regs)[37] = tswapreg(env->xer);
-
-    for (i = 0; i < ARRAY_SIZE(env->crf); i++) {
-        ccr |= env->crf[i] << (32 - ((i + 1) * 4));
-    }
-    (*regs)[38] = tswapreg(ccr);
-}
-
-#define USE_ELF_CORE_DUMP
-#define ELF_EXEC_PAGESIZE       4096
-
-#endif
-
-#ifdef TARGET_MIPS
-
-#define ELF_START_MMAP 0x80000000
-
-#define elf_check_arch(x) ( (x) == EM_MIPS )
-
-#ifdef TARGET_MIPS64
-#define ELF_CLASS   ELFCLASS64
-#else
-#define ELF_CLASS   ELFCLASS32
-#endif
-#define ELF_ARCH    EM_MIPS
-
-static inline void init_thread(struct target_pt_regs *regs,
-                               struct image_info *infop)
-{
-    regs->cp0_status = 2 << CP0St_KSU;
-    regs->cp0_epc = infop->entry;
-    regs->regs[29] = infop->start_stack;
-}
-
-/* See linux kernel: arch/mips/include/asm/elf.h.  */
-#define ELF_NREG 45
-typedef target_elf_greg_t target_elf_gregset_t[ELF_NREG];
-
-/* See linux kernel: arch/mips/include/asm/reg.h.  */
-enum {
-#ifdef TARGET_MIPS64
-    TARGET_EF_R0 = 0,
-#else
-    TARGET_EF_R0 = 6,
-#endif
-    TARGET_EF_R26 = TARGET_EF_R0 + 26,
-    TARGET_EF_R27 = TARGET_EF_R0 + 27,
-    TARGET_EF_LO = TARGET_EF_R0 + 32,
-    TARGET_EF_HI = TARGET_EF_R0 + 33,
-    TARGET_EF_CP0_EPC = TARGET_EF_R0 + 34,
-    TARGET_EF_CP0_BADVADDR = TARGET_EF_R0 + 35,
-    TARGET_EF_CP0_STATUS = TARGET_EF_R0 + 36,
-    TARGET_EF_CP0_CAUSE = TARGET_EF_R0 + 37
-};
-
-/* See linux kernel: arch/mips/kernel/process.c:elf_dump_regs.  */
-static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUMIPSState *env)
-{
-    int i;
-
-    for (i = 0; i < TARGET_EF_R0; i++) {
-        (*regs)[i] = 0;
-    }
-    (*regs)[TARGET_EF_R0] = 0;
-
-    for (i = 1; i < ARRAY_SIZE(env->active_tc.gpr); i++) {
-        (*regs)[TARGET_EF_R0 + i] = tswapreg(env->active_tc.gpr[i]);
-    }
-
-    (*regs)[TARGET_EF_R26] = 0;
-    (*regs)[TARGET_EF_R27] = 0;
-    (*regs)[TARGET_EF_LO] = tswapreg(env->active_tc.LO[0]);
-    (*regs)[TARGET_EF_HI] = tswapreg(env->active_tc.HI[0]);
-    (*regs)[TARGET_EF_CP0_EPC] = tswapreg(env->active_tc.PC);
-    (*regs)[TARGET_EF_CP0_BADVADDR] = tswapreg(env->CP0_BadVAddr);
-    (*regs)[TARGET_EF_CP0_STATUS] = tswapreg(env->CP0_Status);
-    (*regs)[TARGET_EF_CP0_CAUSE] = tswapreg(env->CP0_Cause);
-}
-
-#define USE_ELF_CORE_DUMP
-#define ELF_EXEC_PAGESIZE        4096
-
-#endif /* TARGET_MIPS */
-
-#ifdef TARGET_MICROBLAZE
-
-#define ELF_START_MMAP 0x80000000
-
-#define elf_check_arch(x) ( (x) == EM_MICROBLAZE || (x) == EM_MICROBLAZE_OLD)
-
-#define ELF_CLASS   ELFCLASS32
-#define ELF_ARCH    EM_MICROBLAZE
-
-static inline void init_thread(struct target_pt_regs *regs,
-                               struct image_info *infop)
-{
-    regs->pc = infop->entry;
-    regs->r1 = infop->start_stack;
-
-}
-
-#define ELF_EXEC_PAGESIZE        4096
-
-#define USE_ELF_CORE_DUMP
-#define ELF_NREG 38
-typedef target_elf_greg_t target_elf_gregset_t[ELF_NREG];
-
-/* See linux kernel: arch/mips/kernel/process.c:elf_dump_regs.  */
-static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUMBState *env)
-{
-    int i, pos = 0;
-
-    for (i = 0; i < 32; i++) {
-        (*regs)[pos++] = tswapreg(env->regs[i]);
-    }
-
-    for (i = 0; i < 6; i++) {
-        (*regs)[pos++] = tswapreg(env->sregs[i]);
-    }
-}
-
-#endif /* TARGET_MICROBLAZE */
-
-#ifdef TARGET_OPENRISC
-
-#define ELF_START_MMAP 0x08000000
-
-#define elf_check_arch(x) ((x) == EM_OPENRISC)
-
-#define ELF_ARCH EM_OPENRISC
-#define ELF_CLASS ELFCLASS32
-#define ELF_DATA  ELFDATA2MSB
-
-static inline void init_thread(struct target_pt_regs *regs,
-                               struct image_info *infop)
-{
-    regs->pc = infop->entry;
-    regs->gpr[1] = infop->start_stack;
-}
-
-#define USE_ELF_CORE_DUMP
-#define ELF_EXEC_PAGESIZE 8192
-
-/* See linux kernel arch/openrisc/include/asm/elf.h.  */
-#define ELF_NREG 34 /* gprs and pc, sr */
-typedef target_elf_greg_t target_elf_gregset_t[ELF_NREG];
-
-static void elf_core_copy_regs(target_elf_gregset_t *regs,
-                               const CPUOpenRISCState *env)
-{
-    int i;
-
-    for (i = 0; i < 32; i++) {
-        (*regs)[i] = tswapreg(env->gpr[i]);
-    }
-
-    (*regs)[32] = tswapreg(env->pc);
-    (*regs)[33] = tswapreg(env->sr);
-}
-#define ELF_HWCAP 0
-#define ELF_PLATFORM NULL
-
-#endif /* TARGET_OPENRISC */
-
-#ifdef TARGET_SH4
-
-#define ELF_START_MMAP 0x80000000
-
-#define elf_check_arch(x) ( (x) == EM_SH )
-
-#define ELF_CLASS ELFCLASS32
-#define ELF_ARCH  EM_SH
-
-static inline void init_thread(struct target_pt_regs *regs,
-                               struct image_info *infop)
-{
-    /* Check other registers XXXXX */
-    regs->pc = infop->entry;
-    regs->regs[15] = infop->start_stack;
-}
-
-/* See linux kernel: arch/sh/include/asm/elf.h.  */
-#define ELF_NREG 23
-typedef target_elf_greg_t target_elf_gregset_t[ELF_NREG];
-
-/* See linux kernel: arch/sh/include/asm/ptrace.h.  */
-enum {
-    TARGET_REG_PC = 16,
-    TARGET_REG_PR = 17,
-    TARGET_REG_SR = 18,
-    TARGET_REG_GBR = 19,
-    TARGET_REG_MACH = 20,
-    TARGET_REG_MACL = 21,
-    TARGET_REG_SYSCALL = 22
-};
-
-static inline void elf_core_copy_regs(target_elf_gregset_t *regs,
-                                      const CPUSH4State *env)
-{
-    int i;
-
-    for (i = 0; i < 16; i++) {
-        (*regs[i]) = tswapreg(env->gregs[i]);
-    }
-
-    (*regs)[TARGET_REG_PC] = tswapreg(env->pc);
-    (*regs)[TARGET_REG_PR] = tswapreg(env->pr);
-    (*regs)[TARGET_REG_SR] = tswapreg(env->sr);
-    (*regs)[TARGET_REG_GBR] = tswapreg(env->gbr);
-    (*regs)[TARGET_REG_MACH] = tswapreg(env->mach);
-    (*regs)[TARGET_REG_MACL] = tswapreg(env->macl);
-    (*regs)[TARGET_REG_SYSCALL] = 0; /* FIXME */
-}
-
-#define USE_ELF_CORE_DUMP
-#define ELF_EXEC_PAGESIZE        4096
-
-#endif
-
-#ifdef TARGET_CRIS
-
-#define ELF_START_MMAP 0x80000000
-
-#define elf_check_arch(x) ( (x) == EM_CRIS )
-
-#define ELF_CLASS ELFCLASS32
-#define ELF_ARCH  EM_CRIS
-
-static inline void init_thread(struct target_pt_regs *regs,
-                               struct image_info *infop)
-{
-    regs->erp = infop->entry;
-}
-
-#define ELF_EXEC_PAGESIZE        8192
-
-#endif
-
-#ifdef TARGET_M68K
-
-#define ELF_START_MMAP 0x80000000
-
-#define elf_check_arch(x) ( (x) == EM_68K )
-
-#define ELF_CLASS       ELFCLASS32
-#define ELF_ARCH        EM_68K
-
-/* ??? Does this need to do anything?
-   #define ELF_PLAT_INIT(_r) */
-
-static inline void init_thread(struct target_pt_regs *regs,
-                               struct image_info *infop)
-{
-    regs->usp = infop->start_stack;
-    regs->sr = 0;
-    regs->pc = infop->entry;
-}
-
-/* See linux kernel: arch/m68k/include/asm/elf.h.  */
-#define ELF_NREG 20
-typedef target_elf_greg_t target_elf_gregset_t[ELF_NREG];
-
-static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUM68KState *env)
-{
-    (*regs)[0] = tswapreg(env->dregs[1]);
-    (*regs)[1] = tswapreg(env->dregs[2]);
-    (*regs)[2] = tswapreg(env->dregs[3]);
-    (*regs)[3] = tswapreg(env->dregs[4]);
-    (*regs)[4] = tswapreg(env->dregs[5]);
-    (*regs)[5] = tswapreg(env->dregs[6]);
-    (*regs)[6] = tswapreg(env->dregs[7]);
-    (*regs)[7] = tswapreg(env->aregs[0]);
-    (*regs)[8] = tswapreg(env->aregs[1]);
-    (*regs)[9] = tswapreg(env->aregs[2]);
-    (*regs)[10] = tswapreg(env->aregs[3]);
-    (*regs)[11] = tswapreg(env->aregs[4]);
-    (*regs)[12] = tswapreg(env->aregs[5]);
-    (*regs)[13] = tswapreg(env->aregs[6]);
-    (*regs)[14] = tswapreg(env->dregs[0]);
-    (*regs)[15] = tswapreg(env->aregs[7]);
-    (*regs)[16] = tswapreg(env->dregs[0]); /* FIXME: orig_d0 */
-    (*regs)[17] = tswapreg(env->sr);
-    (*regs)[18] = tswapreg(env->pc);
-    (*regs)[19] = 0;  /* FIXME: regs->format | regs->vector */
-}
-
-#define USE_ELF_CORE_DUMP
-#define ELF_EXEC_PAGESIZE       8192
-
-#endif
-
-#ifdef TARGET_ALPHA
-
-#define ELF_START_MMAP (0x30000000000ULL)
-
-#define elf_check_arch(x) ( (x) == ELF_ARCH )
-
-#define ELF_CLASS      ELFCLASS64
-#define ELF_ARCH       EM_ALPHA
-
-static inline void init_thread(struct target_pt_regs *regs,
-                               struct image_info *infop)
-{
-    regs->pc = infop->entry;
-    regs->ps = 8;
-    regs->usp = infop->start_stack;
-}
-
-#define ELF_EXEC_PAGESIZE        8192
-
-#endif /* TARGET_ALPHA */
-
-#ifdef TARGET_S390X
-
-#define ELF_START_MMAP (0x20000000000ULL)
-
-#define elf_check_arch(x) ( (x) == ELF_ARCH )
-
-#define ELF_CLASS	ELFCLASS64
-#define ELF_DATA	ELFDATA2MSB
-#define ELF_ARCH	EM_S390
-
-static inline void init_thread(struct target_pt_regs *regs, struct image_info *infop)
-{
-    regs->psw.addr = infop->entry;
-    regs->psw.mask = PSW_MASK_64 | PSW_MASK_32;
-    regs->gprs[15] = infop->start_stack;
-}
-
-#endif /* TARGET_S390X */
-
-#ifndef ELF_PLATFORM
-#define ELF_PLATFORM (NULL)
-#endif
-
-#ifndef ELF_HWCAP
-#define ELF_HWCAP 0
-#endif
 
 #ifdef TARGET_ABI32
 #undef ELF_CLASS
@@ -1336,93 +269,38 @@ static bool elf_check_ehdr(struct elfhdr *ehdr)
             && (ehdr->e_type == ET_EXEC || ehdr->e_type == ET_DYN));
 }
 
-/*
- * 'copy_elf_strings()' copies argument/envelope strings from user
- * memory to free pages in kernel mem. These are in a format ready
- * to be put directly into the top of new user memory.
- *
- */
-static abi_ulong copy_elf_strings(int argc,char ** argv, void **page,
-                                  abi_ulong p)
-{
-    char *tmp, *tmp1, *pag = NULL;
-    int len, offset = 0;
-
-    if (!p) {
-        return 0;       /* bullet-proofing */
-    }
-    while (argc-- > 0) {
-        tmp = argv[argc];
-        if (!tmp) {
-            fprintf(stderr, "VFS: argc is wrong");
-            exit(-1);
-        }
-        tmp1 = tmp;
-        while (*tmp++);
-        len = tmp - tmp1;
-        if (p < len) {  /* this shouldn't happen - 128kB */
-            return 0;
-        }
-        while (len) {
-            --p; --tmp; --len;
-            if (--offset < 0) {
-                offset = p % TARGET_PAGE_SIZE;
-                pag = (char *)page[p/TARGET_PAGE_SIZE];
-                if (!pag) {
-                    pag = g_try_malloc0(TARGET_PAGE_SIZE);
-                    page[p/TARGET_PAGE_SIZE] = pag;
-                    if (!pag)
-                        return 0;
-                }
-            }
-            if (len == 0 || offset == 0) {
-                *(pag + offset) = *tmp;
-            }
-            else {
-                int bytes_to_copy = (len > offset) ? offset : len;
-                tmp -= bytes_to_copy;
-                p -= bytes_to_copy;
-                offset -= bytes_to_copy;
-                len -= bytes_to_copy;
-                memcpy_fromfs(pag + offset, tmp, bytes_to_copy + 1);
-            }
-        }
-    }
-    return p;
-}
 
 static abi_ulong setup_arg_pages(abi_ulong p, struct linux_binprm *bprm,
                                  struct image_info *info)
 {
     abi_ulong stack_base, size, error;
-    int i;
 
     size = guest_stack_size;
 
+    assert(size == 8u*1024*1024); /* 8 MB, allocated upfront */
+    /* CGC TODO: The real one auto-grows, do we want this too? */
+
+    /* For some weird reason, they start the stack one dword
+     * below the top. Not sure if I understand why, there's
+     * nothing there and push would work anyway!
+     * Anyway, we need to force-align and then dis-align. */
+    abi_ulong mmap_stack_top = CGC_INITIAL_SP - (size - 4);
+
     /* Yeehaw, CGC binaries all have an executable stack */
-    error = target_mmap(0, size, PROT_READ | PROT_WRITE | PROT_EXEC,
-                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    error = target_mmap(mmap_stack_top, size, PROT_READ | PROT_WRITE | PROT_EXEC,
+                        MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
     if (error == -1) {
         perror("mmap stack");
         exit(-1);
     }
 
     info->stack_limit = error;
-    stack_base = info->stack_limit + size - MAX_ARG_PAGES*TARGET_PAGE_SIZE;
+    stack_base = info->stack_limit + size - 4; /* de-align, as mandated */
     p += stack_base;
 
-    /* We don't want to copy anything to the stack, it should be all zeroes */
-    /*
-    for (i = 0 ; i < MAX_ARG_PAGES ; i++) {
-        if (bprm->page[i]) {
-            info->rss++;
-            memcpy_to_target(stack_base, bprm->page[i], TARGET_PAGE_SIZE);
-            g_free(bprm->page[i]);
-        }
-        stack_base += TARGET_PAGE_SIZE;
-    }
-    */
+    assert(stack_base == CGC_INITIAL_SP);
 
+    /* We don't want to copy anything to the stack, it should be all zeroes */
     return p;
 }
 
@@ -1495,129 +373,6 @@ static abi_ulong loader_build_fdpic_loadmap(struct image_info *info, abi_ulong s
     return sp;
 }
 #endif
-
-static abi_ulong create_elf_tables(abi_ulong p, int argc, int envc,
-                                   struct elfhdr *exec,
-                                   struct image_info *info,
-                                   struct image_info *interp_info)
-{
-    abi_ulong sp;
-    abi_ulong sp_auxv;
-    int size;
-    int i;
-    abi_ulong u_rand_bytes;
-    uint8_t k_rand_bytes[16];
-    abi_ulong u_platform;
-    const char *k_platform;
-    const int n = sizeof(elf_addr_t);
-
-    sp = p;
-
-#ifdef CONFIG_USE_FDPIC
-    /* Needs to be before we load the env/argc/... */
-    if (elf_is_fdpic(exec)) {
-        /* Need 4 byte alignment for these structs */
-        sp &= ~3;
-        sp = loader_build_fdpic_loadmap(info, sp);
-        info->other_info = interp_info;
-        if (interp_info) {
-            interp_info->other_info = info;
-            sp = loader_build_fdpic_loadmap(interp_info, sp);
-        }
-    }
-#endif
-
-    u_platform = 0;
-    k_platform = ELF_PLATFORM;
-    if (k_platform) {
-        size_t len = strlen(k_platform) + 1;
-        sp -= (len + n - 1) & ~(n - 1);
-        u_platform = sp;
-        /* FIXME - check return value of memcpy_to_target() for failure */
-        memcpy_to_target(sp, k_platform, len);
-    }
-
-    /*
-     * Generate 16 random bytes for userspace PRNG seeding (not
-     * cryptically secure but it's not the aim of QEMU).
-     */
-    for (i = 0; i < 16; i++) {
-        k_rand_bytes[i] = rand();
-    }
-    sp -= 16;
-    u_rand_bytes = sp;
-    /* FIXME - check return value of memcpy_to_target() for failure */
-    memcpy_to_target(sp, k_rand_bytes, 16);
-
-    /*
-     * Force 16 byte _final_ alignment here for generality.
-     */
-    sp = sp &~ (abi_ulong)15;
-    size = (DLINFO_ITEMS + 1) * 2;
-    if (k_platform)
-        size += 2;
-#ifdef DLINFO_ARCH_ITEMS
-    size += DLINFO_ARCH_ITEMS * 2;
-#endif
-#ifdef ELF_HWCAP2
-    size += 2;
-#endif
-    size += envc + argc + 2;
-    size += 1;  /* argc itself */
-    size *= n;
-    if (size & 15)
-        sp -= 16 - (size & 15);
-
-    /* This is correct because Linux defines
-     * elf_addr_t as Elf32_Off / Elf64_Off
-     */
-#define NEW_AUX_ENT(id, val) do {               \
-        sp -= n; put_user_ual(val, sp);         \
-        sp -= n; put_user_ual(id, sp);          \
-    } while(0)
-
-    sp_auxv = sp;
-    NEW_AUX_ENT (AT_NULL, 0);
-
-    /* There must be exactly DLINFO_ITEMS entries here.  */
-    NEW_AUX_ENT(AT_PHDR, (abi_ulong)(info->load_addr + exec->e_phoff));
-    NEW_AUX_ENT(AT_PHENT, (abi_ulong)(sizeof (struct elf_phdr)));
-    NEW_AUX_ENT(AT_PHNUM, (abi_ulong)(exec->e_phnum));
-    NEW_AUX_ENT(AT_PAGESZ, (abi_ulong)(MAX(TARGET_PAGE_SIZE, getpagesize())));
-    NEW_AUX_ENT(AT_BASE, (abi_ulong)(interp_info ? interp_info->load_addr : 0));
-    NEW_AUX_ENT(AT_FLAGS, (abi_ulong)0);
-    NEW_AUX_ENT(AT_ENTRY, info->entry);
-    NEW_AUX_ENT(AT_UID, (abi_ulong) getuid());
-    NEW_AUX_ENT(AT_EUID, (abi_ulong) geteuid());
-    NEW_AUX_ENT(AT_GID, (abi_ulong) getgid());
-    NEW_AUX_ENT(AT_EGID, (abi_ulong) getegid());
-    NEW_AUX_ENT(AT_HWCAP, (abi_ulong) ELF_HWCAP);
-    NEW_AUX_ENT(AT_CLKTCK, (abi_ulong) sysconf(_SC_CLK_TCK));
-    NEW_AUX_ENT(AT_RANDOM, (abi_ulong) u_rand_bytes);
-
-#ifdef ELF_HWCAP2
-    NEW_AUX_ENT(AT_HWCAP2, (abi_ulong) ELF_HWCAP2);
-#endif
-
-    if (k_platform)
-        NEW_AUX_ENT(AT_PLATFORM, u_platform);
-#ifdef ARCH_DLINFO
-    /*
-     * ARCH_DLINFO must come last so platform specific code can enforce
-     * special alignment requirements on the AUXV if necessary (eg. PPC).
-     */
-    ARCH_DLINFO;
-#endif
-#undef NEW_AUX_ENT
-
-    info->saved_auxv = sp;
-    info->auxv_len = sp_auxv - sp;
-
-    sp = loader_build_argptr(envc, argc, sp, p, 0);
-    /* Check the right amount of stack was allocated for auxvec, envp & argv. */
-    assert(sp_auxv - sp == size);
-    return sp;
-}
 
 #ifndef TARGET_HAS_VALIDATE_GUEST_SPACE
 /* If the guest doesn't have a validation function just agree */
@@ -1997,31 +752,6 @@ static void load_elf_image(const char *image_name, int image_fd,
     exit(-1);
 }
 
-static void load_elf_interp(const char *filename, struct image_info *info,
-                            char bprm_buf[BPRM_BUF_SIZE])
-{
-    int fd, retval;
-
-    fd = open(path(filename), O_RDONLY);
-    if (fd < 0) {
-        goto exit_perror;
-    }
-
-    retval = read(fd, bprm_buf, BPRM_BUF_SIZE);
-    if (retval < 0) {
-        goto exit_perror;
-    }
-    if (retval < BPRM_BUF_SIZE) {
-        memset(bprm_buf + retval, 0, BPRM_BUF_SIZE - retval);
-    }
-
-    load_elf_image(filename, fd, info, NULL, bprm_buf);
-    return;
-
- exit_perror:
-    fprintf(stderr, "%s: %s\n", filename, strerror(errno));
-    exit(-1);
-}
 
 static int symfind(const void *s0, const void *s1)
 {
@@ -2169,21 +899,17 @@ give_up:
 
 int load_elf_binary(struct linux_binprm *bprm, struct image_info *info)
 {
-    struct image_info interp_info;
-    struct elfhdr elf_ex;
-    char *elf_interpreter = NULL;
-
-    info->start_mmap = (abi_ulong)ELF_START_MMAP;
+    info->start_mmap = (abi_ulong)CGC_START_MMAP;
     info->mmap = 0;
     info->rss = 0;
 
     load_elf_image(bprm->filename, bprm->fd, info,
-                   &elf_interpreter, bprm->buf);
+                   NULL /*elf_interpreter*/, bprm->buf);
 
     /* ??? We need a copy of the elf header for passing to create_elf_tables.
        If we do nothing, we'll have overwritten this when we re-use bprm->buf
        when we load the interpreter.  */
-    elf_ex = *(struct elfhdr *)bprm->buf;
+    //elf_ex = *(struct elfhdr *)bprm->buf;
 
     /* Ignore the argc, argv, and envp, they aren't used in CGC */
     /*
@@ -2200,24 +926,6 @@ int load_elf_binary(struct linux_binprm *bprm, struct image_info *info)
        change some of these later */
     bprm->p = setup_arg_pages(bprm->p, bprm, info);
 
-    if (elf_interpreter) {
-        load_elf_interp(elf_interpreter, &interp_info, bprm->buf);
-
-        /* If the program interpreter is one of these two, then assume
-           an iBCS2 image.  Otherwise assume a native linux image.  */
-
-        if (strcmp(elf_interpreter, "/usr/lib/libc.so.1") == 0
-            || strcmp(elf_interpreter, "/usr/lib/ld.so.1") == 0) {
-            info->personality = PER_SVR4;
-
-            /* Why this, you ask???  Well SVr4 maps page 0 as read-only,
-               and some applications "depend" upon this behavior.  Since
-               we do not have the power to recompile these, we emulate
-               the SVr4 behavior.  Sigh.  */
-            target_mmap(0, qemu_host_page_size, PROT_READ | PROT_EXEC,
-                        MAP_FIXED | MAP_PRIVATE, -1, 0);
-        }
-    }
 
     /* CGC binaries obviously don't need ELF tables... */
     /*
@@ -2227,15 +935,6 @@ int load_elf_binary(struct linux_binprm *bprm, struct image_info *info)
 
     info->start_stack = bprm->p;
 
-    /* If we have an interpreter, set that as the program's entry point.
-       Copy the load_bias as well, to help PPC64 interpret the entry
-       point as a function descriptor.  Do this after creating elf tables
-       so that we copy the original program entry point into the AUXV.  */
-    if (elf_interpreter) {
-        info->load_bias = interp_info.load_bias;
-        info->entry = interp_info.entry;
-        free(elf_interpreter);
-    }
 
 #ifdef USE_ELF_CORE_DUMP
     bprm->core_dump = &elf_core_dump;
@@ -2395,7 +1094,6 @@ static void fill_note(struct memelfnote *, const char *, int,
                       unsigned int, void *);
 static void fill_prstatus(struct target_elf_prstatus *, const TaskState *, int);
 static int fill_psinfo(struct target_elf_prpsinfo *, const TaskState *);
-static void fill_auxv_note(struct memelfnote *, const TaskState *);
 static void fill_elf_note_phdr(struct elf_phdr *, int, off_t);
 static size_t note_size(const struct memelfnote *);
 static void free_note_info(struct elf_note_info *);
@@ -2670,27 +1368,6 @@ static int fill_psinfo(struct target_elf_prpsinfo *psinfo, const TaskState *ts)
     g_free(base_filename);
     bswap_psinfo(psinfo);
     return (0);
-}
-
-static void fill_auxv_note(struct memelfnote *note, const TaskState *ts)
-{
-    elf_addr_t auxv = (elf_addr_t)ts->info->saved_auxv;
-    elf_addr_t orig_auxv = auxv;
-    void *ptr;
-    int len = ts->info->auxv_len;
-
-    /*
-     * Auxiliary vector is stored in target process stack.  It contains
-     * {type, value} pairs that we need to dump into note.  This is not
-     * strictly necessary but we do it here for sake of completeness.
-     */
-
-    /* read in whole auxv vector and copy it to memelfnote */
-    ptr = lock_user(VERIFY_READ, orig_auxv, len, 0);
-    if (ptr != NULL) {
-        fill_note(note, "CORE", NT_AUXV, len, ptr);
-        unlock_user(ptr, auxv, len);
-    }
 }
 
 /*

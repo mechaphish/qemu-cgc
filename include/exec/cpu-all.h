@@ -157,7 +157,7 @@ static inline void tswap64s(uint64_t *s)
 #if defined(CONFIG_USE_GUEST_BASE)
 extern unsigned long guest_base;
 extern int have_guest_base;
-extern unsigned long reserved_va;
+static const unsigned long reserved_va = 0xf7000000; //extern unsigned long reserved_va;
 #define GUEST_BASE guest_base
 #define RESERVED_VA reserved_va
 #else

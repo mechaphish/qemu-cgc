@@ -40,9 +40,9 @@ char *exec_path;
 
 int singlestep;
 const char *filename;
-const char *argv0;
+//const char *argv0;
 int gdbstub_port;
-envlist_t *envlist;
+//envlist_t *envlist;
 static const char *cpu_model;
 unsigned long mmap_min_addr;
 #if defined(CONFIG_USE_GUEST_BASE)
@@ -56,15 +56,9 @@ int have_guest_base;
  * This way we will never overlap with our own libraries or binaries or stack
  * or anything else that QEMU maps.
  */
-# ifdef TARGET_MIPS
-/* MIPS only supports 31 bits of virtual address space for user space */
-unsigned long reserved_va = 0x77000000;
-# else
-/* CGC CQE puts the top of the stack at this address, we will too */
-unsigned long reserved_va = 0xbaaab000;
-# endif
+//static const unsigned long reserved_va = 0xf7000000;
 #else
-unsigned long reserved_va;
+#error 32-on-64 only
 #endif
 #endif
 
@@ -79,7 +73,7 @@ const char *qemu_uname_release;
 
 /* This is the size required to get the same stack mapping as the
    CGC CQE VM */
-unsigned long guest_stack_size = 8 * 1024 * 1024;
+//const unsigned long guest_stack_size = 8 * 1024 * 1024;
 
 void gemu_log(const char *fmt, ...)
 {
@@ -218,7 +212,7 @@ void cpu_list_unlock(void)
 
 
 #if !defined(TARGET_I386) || defined(TARGET_X86_64)
-#error "CGC is an old stile, x86-only 32-bit world."
+#error "CGC is an old style, x86-only 32-bit world."
 #endif
 
 /***********************************************************/
@@ -248,23 +242,7 @@ static void write_dt(void *ptr, unsigned long addr, unsigned long limit,
 
 static uint64_t *idt_table;
 #ifdef TARGET_X86_64
-static void set_gate64(void *ptr, unsigned int type, unsigned int dpl,
-                       uint64_t addr, unsigned int sel)
-{
-    uint32_t *p, e1, e2;
-    e1 = (addr & 0xffff) | (sel << 16);
-    e2 = (addr & 0xffff0000) | 0x8000 | (dpl << 13) | (type << 8);
-    p = ptr;
-    p[0] = tswap32(e1);
-    p[1] = tswap32(e2);
-    p[2] = tswap32(addr >> 32);
-    p[3] = 0;
-}
-/* only dpl matters as we do only user space emulation */
-static void set_idt(int n, unsigned int dpl)
-{
-    set_gate64(idt_table + n * 2, 0, dpl, 0, 0);
-}
+#error removed
 #else
 static void set_gate(void *ptr, unsigned int type, unsigned int dpl,
                      uint32_t addr, unsigned int sel)
@@ -486,65 +464,6 @@ static void handle_arg_log_filename(const char *arg)
     qemu_set_log_filename(arg);
 }
 
-static void handle_arg_set_env(const char *arg)
-{
-    char *r, *p, *token;
-    r = p = strdup(arg);
-    while ((token = strsep(&p, ",")) != NULL) {
-        if (envlist_setenv(envlist, token) != 0) {
-            usage();
-        }
-    }
-    free(r);
-}
-
-static void handle_arg_unset_env(const char *arg)
-{
-    char *r, *p, *token;
-    r = p = strdup(arg);
-    while ((token = strsep(&p, ",")) != NULL) {
-        if (envlist_unsetenv(envlist, token) != 0) {
-            usage();
-        }
-    }
-    free(r);
-}
-
-static void handle_arg_argv0(const char *arg)
-{
-    argv0 = strdup(arg);
-}
-
-static void handle_arg_stack_size(const char *arg)
-{
-    char *p;
-    guest_stack_size = strtoul(arg, &p, 0);
-    if (guest_stack_size == 0) {
-        usage();
-    }
-
-    if (*p == 'M') {
-        guest_stack_size *= 1024 * 1024;
-    } else if (*p == 'k' || *p == 'K') {
-        guest_stack_size *= 1024;
-    }
-}
-
-static void handle_arg_ld_prefix(const char *arg)
-{
-    interp_prefix = strdup(arg);
-}
-
-static void handle_arg_pagesize(const char *arg)
-{
-    qemu_host_page_size = atoi(arg);
-    if (qemu_host_page_size == 0 ||
-        (qemu_host_page_size & (qemu_host_page_size - 1)) != 0) {
-        fprintf(stderr, "page size must be a power of two\n");
-        exit(1);
-    }
-}
-
 static void handle_arg_randseed(const char *arg)
 {
     unsigned long long seed;
@@ -561,64 +480,11 @@ static void handle_arg_gdb(const char *arg)
     gdbstub_port = atoi(arg);
 }
 
-static void handle_arg_uname(const char *arg)
-{
-    qemu_uname_release = strdup(arg);
-}
-
-static void handle_arg_cpu(const char *arg)
-{
-    cpu_model = strdup(arg);
-    if (cpu_model == NULL || is_help_option(cpu_model)) {
-        /* XXX: implement xxx_cpu_list for targets that still miss it */
-#if defined(cpu_list)
-        cpu_list(stdout, &fprintf);
-#endif
-        exit(1);
-    }
-}
-
 #if defined(CONFIG_USE_GUEST_BASE)
 static void handle_arg_guest_base(const char *arg)
 {
     guest_base = strtol(arg, NULL, 0);
     have_guest_base = 1;
-}
-
-static void handle_arg_reserved_va(const char *arg)
-{
-    char *p;
-    int shift = 0;
-    reserved_va = strtoul(arg, &p, 0);
-    switch (*p) {
-    case 'k':
-    case 'K':
-        shift = 10;
-        break;
-    case 'M':
-        shift = 20;
-        break;
-    case 'G':
-        shift = 30;
-        break;
-    }
-    if (shift) {
-        unsigned long unshifted = reserved_va;
-        p++;
-        reserved_va <<= shift;
-        if (((reserved_va >> shift) != unshifted)
-#if HOST_LONG_BITS > TARGET_VIRT_ADDR_SPACE_BITS
-            || (reserved_va > (1ul << TARGET_VIRT_ADDR_SPACE_BITS))
-#endif
-            ) {
-            fprintf(stderr, "Reserved virtual address too big\n");
-            exit(1);
-        }
-    }
-    if (*p) {
-        fprintf(stderr, "Unrecognised -R size suffix '%s'\n", p);
-        exit(1);
-    }
 }
 #endif
 
@@ -658,33 +524,15 @@ static const struct qemu_argument arg_table[] = {
      "",           "print this help"},
     {"g",          "QEMU_GDB",         true,  handle_arg_gdb,
      "port",       "wait gdb connection to 'port'"},
-    {"L",          "QEMU_LD_PREFIX",   true,  handle_arg_ld_prefix,
-     "path",       "set the elf interpreter prefix to 'path'"},
-    {"s",          "QEMU_STACK_SIZE",  true,  handle_arg_stack_size,
-     "size",       "set the stack size to 'size' bytes"},
-    {"cpu",        "QEMU_CPU",         true,  handle_arg_cpu,
-     "model",      "select CPU (-cpu help for list)"},
-    {"E",          "QEMU_SET_ENV",     true,  handle_arg_set_env,
-     "var=value",  "sets targets environment variable (see below)"},
-    {"U",          "QEMU_UNSET_ENV",   true,  handle_arg_unset_env,
-     "var",        "unsets targets environment variable (see below)"},
-    {"0",          "QEMU_ARGV0",       true,  handle_arg_argv0,
-     "argv0",      "forces target process argv[0] to be 'argv0'"},
-    {"r",          "QEMU_UNAME",       true,  handle_arg_uname,
-     "uname",      "set qemu uname release string to 'uname'"},
 #if defined(CONFIG_USE_GUEST_BASE)
     {"B",          "QEMU_GUEST_BASE",  true,  handle_arg_guest_base,
      "address",    "set guest_base address to 'address'"},
-    {"R",          "QEMU_RESERVED_VA", true,  handle_arg_reserved_va,
-     "size",       "reserve 'size' bytes for guest virtual address space"},
 #endif
     {"d",          "QEMU_LOG",         true,  handle_arg_log,
      "item[,...]", "enable logging of specified items "
      "(use '-d help' for a list of items)"},
     {"D",          "QEMU_LOG_FILENAME", true, handle_arg_log_filename,
      "logfile",     "write logs to 'logfile' (default stderr)"},
-    {"p",          "QEMU_PAGESIZE",    true,  handle_arg_pagesize,
-     "pagesize",   "set the host page size to 'pagesize'"},
     {"singlestep", "QEMU_SINGLESTEP",  false, handle_arg_singlestep,
      "",           "run in singlestep mode"},
     {"strace",     "QEMU_STRACE",      false, handle_arg_strace,
@@ -839,11 +687,6 @@ int main(int argc, char **argv, char **envp)
     TaskState *ts;
     CPUArchState *env;
     CPUState *cpu;
-    int optind;
-    char **target_environ, **wrk;
-    char **target_argv;
-    int target_argc;
-    int i;
     int ret;
     int execfd;
 
@@ -866,26 +709,6 @@ int main(int argc, char **argv, char **envp)
 
     module_call_init(MODULE_INIT_QOM);
 
-    if ((envlist = envlist_create()) == NULL) {
-        (void) fprintf(stderr, "Unable to allocate envlist\n");
-        exit(1);
-    }
-
-    /* add current environment into the list */
-    for (wrk = environ; *wrk != NULL; wrk++) {
-        (void) envlist_setenv(envlist, *wrk);
-    }
-
-    /* Read the stack limit from the kernel.  If it's "unlimited",
-       then we can do little else besides use the default.  */
-    {
-        struct rlimit lim;
-        if (getrlimit(RLIMIT_STACK, &lim) == 0
-            && lim.rlim_cur != RLIM_INFINITY
-            && lim.rlim_cur == (target_long)lim.rlim_cur) {
-            guest_stack_size = lim.rlim_cur;
-        }
-    }
 
     cpu_model = NULL;
 #if defined(cpudef_setup)
@@ -909,41 +732,7 @@ int main(int argc, char **argv, char **envp)
     init_paths(interp_prefix);
 
     if (cpu_model == NULL) {
-#if defined(TARGET_I386)
-#ifdef TARGET_X86_64
-        cpu_model = "qemu64";
-#else
         cpu_model = "qemu32";
-#endif
-#elif defined(TARGET_ARM)
-        cpu_model = "any";
-#elif defined(TARGET_UNICORE32)
-        cpu_model = "any";
-#elif defined(TARGET_M68K)
-        cpu_model = "any";
-#elif defined(TARGET_SPARC)
-#ifdef TARGET_SPARC64
-        cpu_model = "TI UltraSparc II";
-#else
-        cpu_model = "Fujitsu MB86904";
-#endif
-#elif defined(TARGET_MIPS)
-#if defined(TARGET_ABI_MIPSN32) || defined(TARGET_ABI_MIPSN64)
-        cpu_model = "5KEf";
-#else
-        cpu_model = "24Kf";
-#endif
-#elif defined TARGET_OPENRISC
-        cpu_model = "or1200";
-#elif defined(TARGET_PPC)
-# ifdef TARGET_PPC64
-        cpu_model = "POWER7";
-# else
-        cpu_model = "750";
-# endif
-#else
-        cpu_model = "any";
-#endif
     }
     tcg_exec_init(0);
     cpu_exec_init_all();
@@ -966,9 +755,6 @@ int main(int argc, char **argv, char **envp)
     if (getenv("QEMU_RAND_SEED")) {
         handle_arg_randseed(getenv("QEMU_RAND_SEED"));
     }
-
-    target_environ = envlist_to_environ(envlist, NULL);
-    envlist_free(envlist);
 
 #if defined(CONFIG_USE_GUEST_BASE)
     /*
@@ -1012,29 +798,6 @@ int main(int argc, char **argv, char **envp)
         }
     }
 
-    /*
-     * Prepare copy of argv vector for target.
-     */
-    target_argc = argc - optind;
-    target_argv = calloc(target_argc + 1, sizeof (char *));
-    if (target_argv == NULL) {
-	(void) fprintf(stderr, "Unable to allocate memory for target_argv\n");
-	exit(1);
-    }
-
-    /*
-     * If argv0 is specified (using '-0' switch) we replace
-     * argv[0] pointer with the given one.
-     */
-    i = 0;
-    if (argv0 != NULL) {
-        target_argv[i++] = strdup(argv0);
-    }
-    for (; i < target_argc; i++) {
-        target_argv[i] = strdup(argv[optind + i]);
-    }
-    target_argv[target_argc] = NULL;
-
     ts = g_malloc0 (sizeof(TaskState));
     init_task_state(ts);
     /* build Task State */
@@ -1052,18 +815,12 @@ int main(int argc, char **argv, char **envp)
         }
     }
 
-    ret = loader_exec(execfd, filename, target_argv, target_environ, regs,
+    ret = loader_exec(execfd, filename, NULL, NULL, regs,
         info, &bprm);
     if (ret != 0) {
         printf("Error while loading %s: %s\n", filename, strerror(-ret));
         _exit(1);
     }
-
-    for (wrk = target_environ; *wrk; wrk++) {
-        free(*wrk);
-    }
-
-    free(target_environ);
 
     if (qemu_log_enabled()) {
 #if defined(CONFIG_USE_GUEST_BASE)
@@ -1210,209 +967,10 @@ int main(int argc, char **argv, char **envp)
     cpu_x86_load_seg(env, R_FS, 0);
     cpu_x86_load_seg(env, R_GS, 0);
 #endif
-#elif defined(TARGET_AARCH64)
-    {
-        int i;
-
-        if (!(arm_feature(env, ARM_FEATURE_AARCH64))) {
-            fprintf(stderr,
-                    "The selected ARM CPU does not support 64 bit mode\n");
-            exit(1);
-        }
-
-        for (i = 0; i < 31; i++) {
-            env->xregs[i] = regs->regs[i];
-        }
-        env->pc = regs->pc;
-        env->xregs[31] = regs->sp;
-    }
-#elif defined(TARGET_ARM)
-    {
-        int i;
-        cpsr_write(env, regs->uregs[16], 0xffffffff);
-        for(i = 0; i < 16; i++) {
-            env->regs[i] = regs->uregs[i];
-        }
-        /* Enable BE8.  */
-        if (EF_ARM_EABI_VERSION(info->elf_flags) >= EF_ARM_EABI_VER4
-            && (info->elf_flags & EF_ARM_BE8)) {
-            env->bswap_code = 1;
-        }
-    }
-#elif defined(TARGET_UNICORE32)
-    {
-        int i;
-        cpu_asr_write(env, regs->uregs[32], 0xffffffff);
-        for (i = 0; i < 32; i++) {
-            env->regs[i] = regs->uregs[i];
-        }
-    }
-#elif defined(TARGET_SPARC)
-    {
-        int i;
-	env->pc = regs->pc;
-	env->npc = regs->npc;
-        env->y = regs->y;
-        for(i = 0; i < 8; i++)
-            env->gregs[i] = regs->u_regs[i];
-        for(i = 0; i < 8; i++)
-            env->regwptr[i] = regs->u_regs[i + 8];
-    }
-#elif defined(TARGET_PPC)
-    {
-        int i;
-
-#if defined(TARGET_PPC64)
-#if defined(TARGET_ABI32)
-        env->msr &= ~((target_ulong)1 << MSR_SF);
-#else
-        env->msr |= (target_ulong)1 << MSR_SF;
-#endif
-#endif
-        env->nip = regs->nip;
-        for(i = 0; i < 32; i++) {
-            env->gpr[i] = regs->gpr[i];
-        }
-    }
-#elif defined(TARGET_M68K)
-    {
-        env->pc = regs->pc;
-        env->dregs[0] = regs->d0;
-        env->dregs[1] = regs->d1;
-        env->dregs[2] = regs->d2;
-        env->dregs[3] = regs->d3;
-        env->dregs[4] = regs->d4;
-        env->dregs[5] = regs->d5;
-        env->dregs[6] = regs->d6;
-        env->dregs[7] = regs->d7;
-        env->aregs[0] = regs->a0;
-        env->aregs[1] = regs->a1;
-        env->aregs[2] = regs->a2;
-        env->aregs[3] = regs->a3;
-        env->aregs[4] = regs->a4;
-        env->aregs[5] = regs->a5;
-        env->aregs[6] = regs->a6;
-        env->aregs[7] = regs->usp;
-        env->sr = regs->sr;
-        ts->sim_syscalls = 1;
-    }
-#elif defined(TARGET_MICROBLAZE)
-    {
-        env->regs[0] = regs->r0;
-        env->regs[1] = regs->r1;
-        env->regs[2] = regs->r2;
-        env->regs[3] = regs->r3;
-        env->regs[4] = regs->r4;
-        env->regs[5] = regs->r5;
-        env->regs[6] = regs->r6;
-        env->regs[7] = regs->r7;
-        env->regs[8] = regs->r8;
-        env->regs[9] = regs->r9;
-        env->regs[10] = regs->r10;
-        env->regs[11] = regs->r11;
-        env->regs[12] = regs->r12;
-        env->regs[13] = regs->r13;
-        env->regs[14] = regs->r14;
-        env->regs[15] = regs->r15;
-        env->regs[16] = regs->r16;
-        env->regs[17] = regs->r17;
-        env->regs[18] = regs->r18;
-        env->regs[19] = regs->r19;
-        env->regs[20] = regs->r20;
-        env->regs[21] = regs->r21;
-        env->regs[22] = regs->r22;
-        env->regs[23] = regs->r23;
-        env->regs[24] = regs->r24;
-        env->regs[25] = regs->r25;
-        env->regs[26] = regs->r26;
-        env->regs[27] = regs->r27;
-        env->regs[28] = regs->r28;
-        env->regs[29] = regs->r29;
-        env->regs[30] = regs->r30;
-        env->regs[31] = regs->r31;
-        env->sregs[SR_PC] = regs->pc;
-    }
-#elif defined(TARGET_MIPS)
-    {
-        int i;
-
-        for(i = 0; i < 32; i++) {
-            env->active_tc.gpr[i] = regs->regs[i];
-        }
-        env->active_tc.PC = regs->cp0_epc & ~(target_ulong)1;
-        if (regs->cp0_epc & 1) {
-            env->hflags |= MIPS_HFLAG_M16;
-        }
-    }
-#elif defined(TARGET_OPENRISC)
-    {
-        int i;
-
-        for (i = 0; i < 32; i++) {
-            env->gpr[i] = regs->gpr[i];
-        }
-
-        env->sr = regs->sr;
-        env->pc = regs->pc;
-    }
-#elif defined(TARGET_SH4)
-    {
-        int i;
-
-        for(i = 0; i < 16; i++) {
-            env->gregs[i] = regs->regs[i];
-        }
-        env->pc = regs->pc;
-    }
-#elif defined(TARGET_ALPHA)
-    {
-        int i;
-
-        for(i = 0; i < 28; i++) {
-            env->ir[i] = ((abi_ulong *)regs)[i];
-        }
-        env->ir[IR_SP] = regs->usp;
-        env->pc = regs->pc;
-    }
-#elif defined(TARGET_CRIS)
-    {
-	    env->regs[0] = regs->r0;
-	    env->regs[1] = regs->r1;
-	    env->regs[2] = regs->r2;
-	    env->regs[3] = regs->r3;
-	    env->regs[4] = regs->r4;
-	    env->regs[5] = regs->r5;
-	    env->regs[6] = regs->r6;
-	    env->regs[7] = regs->r7;
-	    env->regs[8] = regs->r8;
-	    env->regs[9] = regs->r9;
-	    env->regs[10] = regs->r10;
-	    env->regs[11] = regs->r11;
-	    env->regs[12] = regs->r12;
-	    env->regs[13] = regs->r13;
-	    env->regs[14] = info->start_stack;
-	    env->regs[15] = regs->acr;
-	    env->pc = regs->erp;
-    }
-#elif defined(TARGET_S390X)
-    {
-            int i;
-            for (i = 0; i < 16; i++) {
-                env->regs[i] = regs->gprs[i];
-            }
-            env->psw.mask = regs->psw.mask;
-            env->psw.addr = regs->psw.addr;
-    }
 #else
 #error unsupported target CPU
 #endif
 
-#if defined(TARGET_ARM) || defined(TARGET_M68K) || defined(TARGET_UNICORE32)
-    ts->stack_base = info->start_stack;
-    ts->heap_base = info->brk;
-    /* This will be filled in on the first SYS_HEAPINFO call.  */
-    ts->heap_limit = 0;
-#endif
 
     if (gdbstub_port) {
         if (gdbserver_start(gdbstub_port) < 0) {
@@ -1425,8 +983,8 @@ int main(int argc, char **argv, char **envp)
 
     /* Placed to get allocate to behave just like the CGC CQE VM, there's
        probably a more natural way to have this occur... */
-    reserved_va = 0xb8000000;
-    mmap_next_start = 0xb8000000;
+    //reserved_va = 0xb8000000;
+    mmap_next_start = 0xb7fff000;
 
     cpu_loop(env);
     /* never exits */

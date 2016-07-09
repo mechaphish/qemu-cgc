@@ -222,7 +222,7 @@ void mmap_fork_end(int child);
 extern char *magicdump_filename;
 
 /* main.c */
-extern unsigned long guest_stack_size;
+static const unsigned long guest_stack_size = 8 * 1024 * 1024; //extern unsigned long guest_stack_size;
 
 /* user access */
 
