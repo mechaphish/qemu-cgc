@@ -110,8 +110,6 @@ int __clone2(int (*fn)(void *), void *child_stack_base,
 #include <linux/route.h>
 #include <linux/filter.h>
 #include <linux/blkpg.h>
-#include "linux_loop.h"
-#include "uname.h"
 
 #include "qemu.h"
 
@@ -411,7 +409,6 @@ static abi_long do_receive(CPUX86State *env, abi_long fd, abi_ulong buf, abi_lon
         afl_forkserver(env);
         first_recv = 0;
     }
-
     int ret = 0;
     abi_ulong *p; abi_long *prx;
 

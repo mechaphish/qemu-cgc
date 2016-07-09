@@ -115,9 +115,10 @@ typedef struct PageDesc {
 
 #define V_L1_SHIFT (L1_MAP_ADDR_SPACE_BITS - TARGET_PAGE_BITS - V_L1_BITS)
 
-uintptr_t qemu_real_host_page_size;
-uintptr_t qemu_host_page_size;
-uintptr_t qemu_host_page_mask;
+// TURNED INTO CONSTANTS FOR CGC [J]
+//uintptr_t qemu_real_host_page_size;
+//uintptr_t qemu_host_page_size;
+//uintptr_t qemu_host_page_mask;
 
 /* This is a multi-level map on the virtual address space.
    The bottom level has pointers to PageDesc.  */
@@ -302,16 +303,12 @@ static __attribute__((unused)) void map_exec(void *addr, long size)
 
 void page_size_init(void)
 {
-    /* NOTE: we can always suppose that qemu_host_page_size >=
-       TARGET_PAGE_SIZE */
-    qemu_real_host_page_size = getpagesize();
-    if (qemu_host_page_size == 0) {
-        qemu_host_page_size = qemu_real_host_page_size;
-    }
-    if (qemu_host_page_size < TARGET_PAGE_SIZE) {
-        qemu_host_page_size = TARGET_PAGE_SIZE;
-    }
-    qemu_host_page_mask = ~(qemu_host_page_size - 1);
+    // TURNED INTO CONSTANTS FOR CGC [J]
+    assert(qemu_real_host_page_size == getpagesize());
+    assert(qemu_host_page_size == getpagesize());
+    assert(qemu_host_page_size == TARGET_PAGE_SIZE);
+    assert(qemu_host_page_size == 4096);
+    assert(qemu_host_page_mask == (~(qemu_host_page_size - 1)));
 }
 
 static void page_init(void)
@@ -826,7 +823,7 @@ static void tb_invalidate_check(target_ulong address)
 
     address &= TARGET_PAGE_MASK;
     for (i = 0; i < CODE_GEN_PHYS_HASH_SIZE; i++) {
-        for (tb = tb_ctx.tb_phys_hash[i]; tb != NULL; tb = tb->phys_hash_next) {
+        for (tb = tcg_ctx.tb_ctx.tb_phys_hash[i]; tb != NULL; tb = tb->phys_hash_next) {
             if (!(address + TARGET_PAGE_SIZE <= tb->pc ||
                   address >= tb->pc + tb->size)) {
                 printf("ERROR invalidate: address=" TARGET_FMT_lx
