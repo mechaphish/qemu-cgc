@@ -501,7 +501,7 @@ static void handle_arg_strace(const char *arg)
 static void handle_arg_version(const char *arg)
 {
     printf("qemu-" TARGET_NAME " version " QEMU_VERSION QEMU_PKGVERSION
-           ", Copyright (c) 2003-2008 Fabrice Bellard\n");
+           ", Copyright (c) 2003-2008 Fabrice Bellard\nSHELLPHISH MODDED FOR CGC, ASK Nick or Jacopo\n");
     exit(0);
 }
 
@@ -594,9 +594,7 @@ static void usage(void)
 
     printf("\n"
            "Defaults:\n"
-           "QEMU_LD_PREFIX  = %s\n"
            "QEMU_STACK_SIZE = %ld byte\n",
-           interp_prefix,
            guest_stack_size);
 
     printf("\n"
@@ -778,6 +776,8 @@ int main(int argc, char **argv, char **envp)
             mmap_next_start = reserved_va;
         }
     }
+#else /* CONFIG_USE_GUEST_BASE */
+# error CGC (x86) has guest base!
 #endif /* CONFIG_USE_GUEST_BASE */
 
     /*
@@ -861,14 +861,7 @@ int main(int argc, char **argv, char **envp)
         env->hflags |= HF_OSFXSR_MASK;
     }
 #ifndef TARGET_ABI32
-    /* enable 64 bit mode if possible */
-    if (!(env->features[FEAT_8000_0001_EDX] & CPUID_EXT2_LM)) {
-        fprintf(stderr, "The selected x86 CPU does not support 64 bit mode\n");
-        exit(1);
-    }
-    env->cr[4] |= CR4_PAE_MASK;
-    env->efer |= MSR_EFER_LMA | MSR_EFER_LME;
-    env->hflags |= HF_LMA_MASK;
+# error CGC is 32-bit only!
 #endif
 
     /* flags setup : we activate the IRQs by default as in user mode */
@@ -876,15 +869,7 @@ int main(int argc, char **argv, char **envp)
 
     /* linux register setup */
 #ifndef TARGET_ABI32
-    env->regs[R_EAX] = regs->rax;
-    env->regs[R_EBX] = regs->rbx;
-    env->regs[R_ECX] = regs->rcx;
-    env->regs[R_EDX] = regs->rdx;
-    env->regs[R_ESI] = regs->rsi;
-    env->regs[R_EDI] = regs->rdi;
-    env->regs[R_EBP] = regs->rbp;
-    env->regs[R_ESP] = regs->rsp;
-    env->eip = regs->rip;
+# error CGC is 32-bit only!
 #else
     env->regs[R_EAX] = regs->eax;
     env->regs[R_EBX] = regs->ebx;
@@ -898,8 +883,10 @@ int main(int argc, char **argv, char **envp)
 #endif
 
     /* linux interrupt setup */
+    /* NOTE: mmap_next_start is still at reserved_va here, so it will go right
+     *       before the "kernel break" at 0x7f... */
 #ifndef TARGET_ABI32
-    env->idt.limit = 511;
+# error CGC is 32-bit only!
 #else
     env->idt.limit = 255;
 #endif
@@ -942,11 +929,7 @@ int main(int argc, char **argv, char **envp)
                  DESC_G_MASK | DESC_B_MASK | DESC_P_MASK | DESC_S_MASK |
                  (3 << DESC_DPL_SHIFT) | (0xa << DESC_TYPE_SHIFT));
 #else
-        /* 64 bit code segment */
-        write_dt(&gdt_table[__USER_CS >> 3], 0, 0xfffff,
-                 DESC_G_MASK | DESC_B_MASK | DESC_P_MASK | DESC_S_MASK |
-                 DESC_L_MASK |
-                 (3 << DESC_DPL_SHIFT) | (0xa << DESC_TYPE_SHIFT));
+# error CGC is 32-bit only!
 #endif
         write_dt(&gdt_table[__USER_DS >> 3], 0, 0xfffff,
                  DESC_G_MASK | DESC_B_MASK | DESC_P_MASK | DESC_S_MASK |
@@ -959,13 +942,8 @@ int main(int argc, char **argv, char **envp)
     cpu_x86_load_seg(env, R_ES, __USER_DS);
     cpu_x86_load_seg(env, R_FS, __USER_DS);
     cpu_x86_load_seg(env, R_GS, __USER_DS);
-    /* This hack makes Wine work... */
-    env->segs[R_FS].selector = 0;
 #else
-    cpu_x86_load_seg(env, R_DS, 0);
-    cpu_x86_load_seg(env, R_ES, 0);
-    cpu_x86_load_seg(env, R_FS, 0);
-    cpu_x86_load_seg(env, R_GS, 0);
+# error CGC is 32-bit only!
 #endif
 #else
 #error unsupported target CPU
@@ -982,9 +960,28 @@ int main(int argc, char **argv, char **envp)
     }
 
     /* Placed to get allocate to behave just like the CGC CQE VM, there's
-       probably a more natural way to have this occur... */
-    //reserved_va = 0xb8000000;
+       probably a more natural way to have this occur...
+       Also note: this is currently being changed back and forth.
+          - unspecified ELF load addresses (never happens, right? kept at standard ELF 8000000)
+          - IDT / GDT / etc. (kept at qemu's default of going right before the kernel break == reserved_va)
+          - allocate() --> CHANGING IT HERE <--
+    */
     mmap_next_start = 0xb7fff000;
+    // NOTE: DO NOT CHANGE reserved_va, otherwise self-modifying code detection will break! [J]
+
+    /* Final check against the official https://github.com/CyberGrandChallenge/libcgc/blob/master/cgcabi.md */
+    assert(env->regs[R_EAX] == 0); assert(env->regs[R_EBX] == 0);
+    assert(env->regs[R_ECX] == CGC_MAGIC_PAGE_ADDR); // Note: fixed (for CFE)
+    assert(env->regs[R_EDX] == 0); assert(env->regs[R_EDI] == 0); assert(env->regs[R_ESI] == 0);
+    assert(env->regs[R_ESP] == 0xbaaaaffc);
+    assert(env->eflags == 0x202);
+    assert(env->regs[R_ES] == env->regs[R_DS]);
+    assert(env->regs[R_SS] == env->regs[R_DS]);
+    assert(env->regs[R_GS] == env->regs[R_DS]);
+
+    // This actually works, even though this is not true (yet?)
+    // Maybe some reset happening later? [J]
+    //assert(env->regs[R_FS] == env->regs[R_DS]);
 
     cpu_loop(env);
     /* never exits */

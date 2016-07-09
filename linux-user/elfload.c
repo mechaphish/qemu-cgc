@@ -52,8 +52,9 @@ typedef abi_int         target_pid_t;
 
 
 
-/* CGC: copy from VM */
-#define CGC_START_MMAP 0xb8000000
+/* Note: the actual start_mmap is reset in main.c to reserved_va (first), and
+ *       to the value copied from the VM later. This is quite weird, but should work. */
+#define ELF_START_MMAP 0x80000000
 
 /*
  * This is used to ensure we don't load something for the wrong architecture.
@@ -899,7 +900,7 @@ give_up:
 
 int load_elf_binary(struct linux_binprm *bprm, struct image_info *info)
 {
-    info->start_mmap = (abi_ulong)CGC_START_MMAP;
+    info->start_mmap = (abi_ulong)ELF_START_MMAP; /* Will be reset to reserved_va in main! */
     info->mmap = 0;
     info->rss = 0;
 

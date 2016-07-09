@@ -399,10 +399,4 @@ static inline void *lock_user_string(abi_ulong guest_addr)
 
 #include <pthread.h>
 
-/* Include target-specific struct and function definitions;
- * they may need access to the target-independent structures
- * above, so include them last.
- */
-#include "target_cpu.h"
-
 #endif /* QEMU_H */
