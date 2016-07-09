@@ -222,7 +222,7 @@ void mmap_fork_end(int child);
 extern char *magicdump_filename;
 
 /* main.c */
-static const unsigned long guest_stack_size = 8 * 1024 * 1024; //extern unsigned long guest_stack_size;
+extern unsigned long guest_stack_size;
 
 /* user access */
 
@@ -398,5 +398,11 @@ static inline void *lock_user_string(abi_ulong guest_addr)
     unlock_user(host_ptr, guest_addr, (copy) ? sizeof(*host_ptr) : 0)
 
 #include <pthread.h>
+
+/* Include target-specific struct and function definitions;
+ * they may need access to the target-independent structures
+ * above, so include them last.
+ */
+#include "target_cpu.h"
 
 #endif /* QEMU_H */

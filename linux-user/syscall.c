@@ -110,6 +110,8 @@ int __clone2(int (*fn)(void *), void *child_stack_base,
 #include <linux/route.h>
 #include <linux/filter.h>
 #include <linux/blkpg.h>
+#include "linux_loop.h"
+#include "uname.h"
 
 #include "qemu.h"
 
@@ -396,6 +398,8 @@ _Static_assert(sizeof(abi_int) == 4, "abi_int is not 4 bytes!");
 /* The functions are approximate copies of the kernel code */
 /* Note: usually even qemu's original code does not call unlock_user on errors.
  *       (And unless DEBUG_REMAP is defined it's a no-op anyway.) */
+
+#define DEBUG_LENIENT_LENGTHS
 
 static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
     int ret = 0;

@@ -194,12 +194,12 @@ static int mmap_frag(abi_ulong real_start,
 }
 
 #if HOST_LONG_BITS == 64 && TARGET_ABI_BITS == 64
-# error NOT CGC!
+# define TASK_UNMAPPED_BASE  (1ul << 38)
 #elif defined(__CYGWIN__)
-# error NOT CGC!
+/* Cygwin doesn't have a whole lot of address space.  */
+# define TASK_UNMAPPED_BASE  0x18000000
 #else
-/* Changed the value for CGC (was 0x40000000) */
-# define TASK_UNMAPPED_BASE  0xbaaab000
+# define TASK_UNMAPPED_BASE  0x40000000
 #endif
 abi_ulong mmap_next_start = TASK_UNMAPPED_BASE;
 

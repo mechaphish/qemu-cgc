@@ -157,7 +157,7 @@ static inline void tswap64s(uint64_t *s)
 #if defined(CONFIG_USE_GUEST_BASE)
 extern unsigned long guest_base;
 extern int have_guest_base;
-static const unsigned long reserved_va = 0xf7000000; //extern unsigned long reserved_va;
+extern unsigned long reserved_va;
 #define GUEST_BASE guest_base
 #define RESERVED_VA reserved_va
 #else
@@ -175,16 +175,12 @@ static const unsigned long reserved_va = 0xf7000000; //extern unsigned long rese
 #define TARGET_PAGE_MASK ~(TARGET_PAGE_SIZE - 1)
 #define TARGET_PAGE_ALIGN(addr) (((addr) + TARGET_PAGE_SIZE - 1) & TARGET_PAGE_MASK)
 
-#if defined(__i386__) || defined(__amd64__)
-// CHANGED: attempt at speeding up memory access for CGC
-static const uintptr_t qemu_real_host_page_size = 4096;
-static const uintptr_t qemu_host_page_size = 4096;
-static const uintptr_t qemu_host_page_mask = ~(((uintptr_t) 4096) - 1);
-#else
-# error Made page size constant for CGC, compile me on x86/x64!
-#endif
-#define HOST_PAGE_ALIGN(addr) (((addr) + ((uintptr_t) 4096) - 1) & ~(((uintptr_t) 4096) - 1))
-//#define HOST_PAGE_ALIGN(addr) (((addr) + qemu_host_page_size - 1) & qemu_host_page_mask)
+/* ??? These should be the larger of uintptr_t and target_ulong.  */
+extern uintptr_t qemu_real_host_page_size;
+extern uintptr_t qemu_host_page_size;
+extern uintptr_t qemu_host_page_mask;
+
+#define HOST_PAGE_ALIGN(addr) (((addr) + qemu_host_page_size - 1) & qemu_host_page_mask)
 
 /* same as PROT_xxx */
 #define PAGE_READ      0x0001

@@ -115,10 +115,9 @@ typedef struct PageDesc {
 
 #define V_L1_SHIFT (L1_MAP_ADDR_SPACE_BITS - TARGET_PAGE_BITS - V_L1_BITS)
 
-// TURNED INTO CONSTANTS FOR CGC [J]
-//uintptr_t qemu_real_host_page_size;
-//uintptr_t qemu_host_page_size;
-//uintptr_t qemu_host_page_mask;
+uintptr_t qemu_real_host_page_size;
+uintptr_t qemu_host_page_size;
+uintptr_t qemu_host_page_mask;
 
 /* This is a multi-level map on the virtual address space.
    The bottom level has pointers to PageDesc.  */
@@ -303,12 +302,16 @@ static __attribute__((unused)) void map_exec(void *addr, long size)
 
 void page_size_init(void)
 {
-    // TURNED INTO CONSTANTS FOR CGC [J]
-    assert(qemu_real_host_page_size == getpagesize());
-    assert(qemu_host_page_size == getpagesize());
-    assert(qemu_host_page_size == TARGET_PAGE_SIZE);
-    assert(qemu_host_page_size == 4096);
-    assert(qemu_host_page_mask == (~(qemu_host_page_size - 1)));
+    /* NOTE: we can always suppose that qemu_host_page_size >=
+       TARGET_PAGE_SIZE */
+    qemu_real_host_page_size = getpagesize();
+    if (qemu_host_page_size == 0) {
+        qemu_host_page_size = qemu_real_host_page_size;
+    }
+    if (qemu_host_page_size < TARGET_PAGE_SIZE) {
+        qemu_host_page_size = TARGET_PAGE_SIZE;
+    }
+    qemu_host_page_mask = ~(qemu_host_page_size - 1);
 }
 
 static void page_init(void)
@@ -818,7 +821,7 @@ static void tb_invalidate_check(target_ulong address)
 
     address &= TARGET_PAGE_MASK;
     for (i = 0; i < CODE_GEN_PHYS_HASH_SIZE; i++) {
-        for (tb = tcg_ctx.tb_ctx.tb_phys_hash[i]; tb != NULL; tb = tb->phys_hash_next) {
+        for (tb = tb_ctx.tb_phys_hash[i]; tb != NULL; tb = tb->phys_hash_next) {
             if (!(address + TARGET_PAGE_SIZE <= tb->pc ||
                   address >= tb->pc + tb->size)) {
                 printf("ERROR invalidate: address=" TARGET_FMT_lx
@@ -1331,14 +1334,15 @@ static inline void tb_alloc_page(TranslationBlock *tb,
     p->first_tb = (TranslationBlock *)((uintptr_t)tb | n);
     invalidate_page_bitmap(p);
 
+/*
 #if defined(CONFIG_USER_ONLY)
     if (p->flags & PAGE_WRITE) {
         target_ulong addr;
         PageDesc *p2;
         int prot;
 
-        /* force the host page as non writable (writes will have a
-           page fault + mprotect overhead) */
+        // force the host page as non writable (writes will have a
+        // page fault + mprotect overhead)
         page_addr &= qemu_host_page_mask;
         prot = 0;
         for (addr = page_addr; addr < page_addr + qemu_host_page_size;
@@ -1358,14 +1362,17 @@ static inline void tb_alloc_page(TranslationBlock *tb,
                page_addr);
 #endif
     }
-#else
+*/
+//#else
     /* if some code is already present, then the pages are already
        protected. So we handle the case where only the first TB is
        allocated in a physical page */
+/*
     if (!page_already_protected) {
         tlb_protect_code(page_addr);
     }
 #endif
+*/
 }
 
 /* add a new TB and link it to the physical page tables. phys_page2 is
