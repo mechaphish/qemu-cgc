@@ -28,6 +28,10 @@
 #include "exec/memory-internal.h"
 #include "qemu/rcu.h"
 
+#ifdef AFL
+#include "../patches/afl-qemu-cpu-inl.h"
+#endif
+
 /* -icount align implementation. */
 
 typedef struct SyncClocks {
@@ -265,6 +269,13 @@ static TranslationBlock *tb_find_slow(CPUArchState *env,
     target_ulong virt_page2;
 
     tcg_ctx.tb_ctx.tb_invalidated_flag = 0;
+#ifdef AFL
+    /* remove the forkserver stuff from AFL_QEMU_CPU_SNIPPET2
+     *                    it's been moved to do_receive */
+    do {
+        afl_maybe_log(tb->pc);
+    } while(0);
+#endif
 
     /* find translated block using physical mappings */
     phys_pc = get_page_addr_code(env, pc);
@@ -297,6 +308,9 @@ static TranslationBlock *tb_find_slow(CPUArchState *env,
  not_found:
    /* if no translated code available, then translate it now */
     tb = tb_gen_code(cpu, pc, cs_base, flags, 0);
+#ifdef AFL
+    AFL_QEMU_CPU_SNIPPET1;
+#endif
 
  found:
     /* Move the last found TB to the head of the list */

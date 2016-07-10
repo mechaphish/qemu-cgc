@@ -388,10 +388,16 @@ static PageDesc *page_find_alloc(tb_page_addr_t index, int alloc)
 
 #if defined(CONFIG_USER_ONLY)
     /* We can't use g_malloc because it may recurse into a locked mutex. */
+    /* (Note: error-checking courtesy of AFL */
 # define ALLOC(P, SIZE)                                 \
     do {                                                \
-        P = mmap(NULL, SIZE, PROT_READ | PROT_WRITE,    \
+        void *_tmp = mmap(NULL, SIZE, PROT_READ | PROT_WRITE,    \
                  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);   \
+        if (_tmp == (void*)-1) { \
+            qemu_log(">>> Out of memory for stack, bailing out. <<<\n"); \
+            exit(1); \
+        } \
+        (P) = _tmp; \
     } while (0)
 #else
 # define ALLOC(P, SIZE) \

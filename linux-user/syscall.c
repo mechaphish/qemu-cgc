@@ -186,6 +186,9 @@ _syscall6(int, sys_pselect6, int, nfds, fd_set *, readfds, fd_set *, writefds,
           fd_set *, exceptfds, struct timespec *, timeout, void *, sig);
 #endif
 
+#ifdef AFL
+unsigned first_recv = 1;
+#endif
 #if defined(TRACER) || defined(EXIT_ON_DOUBLE_RECEIVE)
 static unsigned zero_recv_hits = 0;
 static unsigned first_recv_hit = false;
@@ -590,6 +593,14 @@ static abi_long do_receive(CPUX86State *env, abi_long fd, abi_ulong buf, abi_lon
 #else
 static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
 #endif
+    /* start the forkserver on the first call to receive to save even more time */
+    if (first_recv)
+    {
+        afl_setup();
+        afl_forkserver(env);
+        first_recv = 0;
+    }
+
     int ret = 0;
     abi_ulong *p; abi_long *prx;
 
