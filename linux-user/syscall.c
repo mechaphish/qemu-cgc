@@ -189,7 +189,7 @@ _syscall6(int, sys_pselect6, int, nfds, fd_set *, readfds, fd_set *, writefds,
 #ifdef AFL
 unsigned first_recv = 1;
 #endif
-#if defined(TRACER) || defined(EXIT_ON_DOUBLE_RECEIVE)
+#if defined(TRACER) || defined(AFL)
 static unsigned zero_recv_hits = 0;
 static unsigned first_recv_hit = false;
 #endif
@@ -588,7 +588,7 @@ extern int bitflip;
 /* Note: usually even qemu's original code does not call unlock_user on errors.
  *       (And unless DEBUG_REMAP is defined it's a no-op anyway.) */
 
-#if defined(TRACER) || defined(EXIT_ON_DOUBLE_RECEIVE)
+#if defined(TRACER) || defined(AFL)
 static abi_long do_receive(CPUX86State *env, abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
 #else
 static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
@@ -609,7 +609,7 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
     /* adjust receive to use stdin if it requests stdout */
     if (fd == 1) fd = 0;
 
-#if defined(TRACER) || defined(EXIT_ON_DOUBLE_RECEIVE)
+#if defined(TRACER) || defined(AFL)
     /* predump the state for cle */
     if (!first_recv_hit)
     {
@@ -658,7 +658,7 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
     }
 
 
-#if defined(TRACER) || defined(EXIT_ON_DOUBLE_RECEIVE)
+#if defined(TRACER) || defined(AFL)
     /* if we recv 0 two times in a row exit */
     if (ret == 0)
     {
@@ -921,7 +921,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
 
     switch(num) {
     case TARGET_NR_receive:
-#if defined(TRACER) || defined(EXIT_ON_DOUBLE_RECEIVE)
+#if defined(TRACER) || defined(AFL)
         ret = do_receive(cpu_env, arg1, arg2, arg3, arg4);
 #else
         ret = do_receive(arg1, arg2, arg3, arg4);
