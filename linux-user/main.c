@@ -38,7 +38,7 @@
 
 char *exec_path;
 
-bool bitflip = false;
+int bitflip;
 
 int singlestep;
 const char *filename;
@@ -531,7 +531,7 @@ static void handle_arg_magicdump(const char *arg)
 
 static void handle_arg_bitflip(const char *arg)
 {
-    bitflip = true;
+    bitflip = 1;
 }
 
 struct qemu_argument {
