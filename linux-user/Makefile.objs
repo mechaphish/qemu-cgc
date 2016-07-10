@@ -1,2 +1,2 @@
 obj-y = main.o syscall.o strace.o mmap.o signal.o \
-	elfload.o linuxload.o uaccess.o uname.o
+	elfload.o linuxload.o uaccess.o

@@ -29,17 +29,6 @@ abi_long memcpy_to_target(abi_ulong dest, const void *src,
     return 0;
 }
 
-static int count(char ** vec)
-{
-    int		i;
-
-    for(i = 0; *vec; i++) {
-        vec++;
-    }
-
-    return(i);
-}
-
 static int prepare_binprm(struct linux_binprm *bprm)
 {
     struct stat		st;
@@ -141,14 +130,16 @@ int loader_exec(int fdexec, const char *filename, char **argv, char **envp,
     int retval;
     int i;
 
-    bprm->p = TARGET_PAGE_SIZE*MAX_ARG_PAGES-sizeof(unsigned int);
-    memset(bprm->page, 0, sizeof(bprm->page));
+    bprm->p = 0; // TARGET_PAGE_SIZE*MAX_ARG_PAGES-sizeof(unsigned int);
+    //memset(bprm->page, 0, sizeof(bprm->page));
     bprm->fd = fdexec;
     bprm->filename = (char *)filename;
-    bprm->argc = count(argv);
-    bprm->argv = argv;
-    bprm->envc = count(envp);
-    bprm->envp = envp;
+
+    assert(argv == NULL); assert(envp == NULL);
+    bprm->argc = 0;
+    bprm->argv = NULL;
+    bprm->envc = 0;
+    bprm->envp = NULL;
 
     retval = prepare_binprm(bprm);
 
