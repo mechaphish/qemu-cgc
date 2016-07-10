@@ -596,15 +596,17 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
     /* adjust receive to use stdin if it requests stdout */
     if (fd == 1) fd = 0;
 
-#ifdef TRACER
+#if defined(TRACER) || defined(EXIT_ON_DOUBLE_RECEIVE)
     /* predump the state for cle */
     if (!first_recv_hit)
     {
+#ifdef TRACER
         if (predump_file)
         {
             do_predump(predump_file, env);
             exit_group(0);
         }
+#endif
         first_recv_hit = true;
     }
 #endif
