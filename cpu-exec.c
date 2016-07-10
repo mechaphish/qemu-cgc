@@ -269,13 +269,6 @@ static TranslationBlock *tb_find_slow(CPUArchState *env,
     target_ulong virt_page2;
 
     tcg_ctx.tb_ctx.tb_invalidated_flag = 0;
-#ifdef AFL
-    /* remove the forkserver stuff from AFL_QEMU_CPU_SNIPPET2
-     *                    it's been moved to do_receive */
-    do {
-        afl_maybe_log(tb->pc);
-    } while(0);
-#endif
 
     /* find translated block using physical mappings */
     phys_pc = get_page_addr_code(env, pc);
@@ -506,6 +499,13 @@ int cpu_exec(CPUArchState *env)
                     next_tb = 0;
                     tcg_ctx.tb_ctx.tb_invalidated_flag = 0;
                 }
+#ifdef AFL
+                /* remove the forkserver stuff from AFL_QEMU_CPU_SNIPPET2
+                 *                    it's been moved to do_receive */
+                do {
+                    afl_maybe_log(tb->pc);
+                } while(0);
+#endif
                 if (qemu_loglevel_mask(CPU_LOG_EXEC)) {
                     qemu_log("Trace %p [" TARGET_FMT_lx "] %s\n",
                              tb->tc_ptr, tb->pc, lookup_symbol(tb->pc));
