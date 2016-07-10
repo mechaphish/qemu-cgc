@@ -316,7 +316,7 @@ static inline int host_to_target_errno(int err)
     */
         /* CGC auto-restarts syscalls, these must never occurr */
         fprintf(stderr, "qemu: INTERNAL ERROR: A syscall returned EINTR: this cannot happen in CGC, we would need to automatically restart it.");
-        abort();
+        exit(-36);
     }
     return TARGET_EINVAL;
 }
@@ -754,7 +754,7 @@ static abi_long do_random(abi_ulong buf, abi_long count, abi_ulong p_rnd_out)
             ret = put_user_u16(randval, buf + i);
         } else {
             fprintf(stderr, "qemu: INTERNAL ERROR: I can only write 8 or 16 bits at a time! (asked for %zd)", size);
-            abort();
+            exit(-37);
         }
         if (ret)
             return ret;
@@ -884,7 +884,7 @@ static abi_long do_fdwait(abi_int n, abi_ulong rfd_addr, abi_ulong wfd_addr, abi
 
     if (is_error(ret)) {
         fprintf(stderr, "qemu: INTERNAL ERROR: select returned an error value != -1 ("TARGET_ABI_FMT_ld") !", ret);
-        abort();
+        exit(-39);
     }
 
     if (rfd_addr && copy_to_user_fdset(rfd_addr, &rfds, n))
@@ -969,7 +969,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
         print_syscall_ret(num, ret);
     if (!((ret >= 0) && (ret <= 6))) { /* CGC syscalls return either 0 or an error */
         fprintf(stderr, "qemu: INTERNAL ERROR: syscall %d tried to return %d, but all CGC syscall return either 0 or one of the CGC_Exxx (positive) values.\n", num, ret);
-        exit(-1);
+        exit(-33);
     }
     return ret;
 }
