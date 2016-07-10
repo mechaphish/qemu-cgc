@@ -966,7 +966,7 @@ int main(int argc, char **argv, char **envp)
           - IDT / GDT / etc. (kept at qemu's default of going right before the kernel break == reserved_va)
           - allocate() --> CHANGING IT HERE <--
     */
-    mmap_next_start = 0xb7fff000;
+    mmap_next_start = 0xb8000000;
     // NOTE: DO NOT CHANGE reserved_va, otherwise self-modifying code detection will break! [J]
 
     /* Final check against the official https://github.com/CyberGrandChallenge/libcgc/blob/master/cgcabi.md */

@@ -366,7 +366,91 @@ static inline abi_long copy_to_user_timeval(abi_ulong target_tv_addr,
     return 0;
 }
 
+struct sinkhole_entry {
+    abi_ulong addr;
+    size_t length;
+    struct sinkhole_entry *next;
+    struct sinkhole_entry *prev;
+};
 
+struct sinkhole_entry *sinkhole_head = NULL;
+
+void add_sinkhole(abi_ulong, size_t);
+abi_ulong get_max_sinkhole(size_t);
+void print_sinkholes(void);
+
+void add_sinkhole(abi_ulong a, size_t length) {
+    struct sinkhole_entry *nse;
+
+    nse = malloc(sizeof(struct sinkhole_entry));
+    nse->addr = a;
+    nse->length = length;
+    nse->next = NULL;
+    nse->prev = NULL;
+
+    /* head insertion */
+    if (sinkhole_head) {
+
+        nse->next = sinkhole_head;
+        nse->prev = NULL;
+
+        if (sinkhole_head->prev) {
+            printf("ERROR: sinkhole_head->prev should always be NULL\n");
+        }
+
+        sinkhole_head->prev = nse;
+
+        sinkhole_head = nse;
+    } else {
+      sinkhole_head = nse;
+    }
+}
+
+abi_ulong get_max_sinkhole(size_t length) {
+    struct sinkhole_entry *current, *max;
+    abi_ulong max_addr = 0;
+
+    current = sinkhole_head;
+    while(current) {
+        if (current->length >= length && current->addr > max_addr) {
+            max_addr = current->addr; 
+            max = current;
+        }
+        current = current->next;
+    }
+
+    if (!max_addr)
+        return 0;
+
+    size_t remaining = max->length - length;
+    max_addr = max->addr + remaining;
+    max->length = remaining;
+
+    /* remove node if it's empty */
+    if (!max->length) {
+        if (max->prev) {
+            max->prev->next = max->next;
+        }
+        if (max->next) {
+            max->next->prev = max->prev;
+        }
+        if (sinkhole_head == max) {
+            sinkhole_head = max->next;
+        }
+        free(max);
+    }
+
+    return max_addr;
+}
+
+void print_sinkholes(void) {
+    struct sinkhole_entry *current;
+    current = sinkhole_head;
+    while (current) {
+        printf("addr: %x, length: %x\n", current->addr, (unsigned int)current->length);
+        current = current->next;
+    }
+}
 
 void syscall_init(void)
 {
@@ -541,13 +625,23 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
     } else p = NULL; /* Believe it or not, binfmt_cgc allows this */
 
     ret = 0;
-
+    abi_ulong chosen = 0;
+    abi_ulong sinkhole_chosen = 0;
     abi_ulong aligned_len = ((len + 0xfff) / 0x1000) * 0x1000;
-    abi_ulong mmap_ret = target_mmap((abi_ulong)0, aligned_len, prot, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+
+    /* check sinkholes */
+    chosen = sinkhole_chosen = get_max_sinkhole(aligned_len);
+    if (!chosen)
+        chosen = mmap_next_start - aligned_len;
+
+    abi_ulong mmap_ret = target_mmap((abi_ulong)chosen, aligned_len, prot, MAP_ANONYMOUS | MAP_PRIVATE| MAP_FIXED, -1, 0);
     if (mmap_ret == -1)
         return get_errno(mmap_ret);
     if (mmap_ret == 0)
         return host_to_target_errno(errno);
+
+    if (!sinkhole_chosen)
+        mmap_next_start = chosen;
 
     if (p != NULL) {
         __put_user(mmap_ret, p);
@@ -562,10 +656,31 @@ static abi_long do_deallocate(abi_ulong start, abi_ulong len)
     abi_long ret;
 
     abi_ulong aligned_len = ((len + 0xfff) / 0x1000) * 0x1000;
+
+    // HACK! check to see if the page is mapped, if not deallocate fails
+    abi_ulong allowed_length = 0;
+    while ((lock_user(VERIFY_WRITE, start, allowed_length + 0x1000, 0)) && allowed_length < aligned_len) {
+        allowed_length += 0x1000;
+    }
+
+    if (allowed_length == 0) {
+        return 0;
+    }
+
+    aligned_len = allowed_length;
+
     ret = target_munmap(start, aligned_len);
 
     /* target_munmap returns either 0 or the errno * -1 */
-    return ret < 0 ? host_to_target_errno(ret * -1) : ret;
+    if (ret < 0)
+        return host_to_target_errno(ret * -1);
+
+    if (start == mmap_next_start)
+        mmap_next_start += aligned_len;
+    else /* add a sinkhole */
+        add_sinkhole(start, aligned_len);
+    
+    return ret;
 }
 
 #define USEC_PER_SEC 1000000L
