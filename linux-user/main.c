@@ -38,6 +38,8 @@
 
 char *exec_path;
 
+bool bitflip = false;
+
 int singlestep;
 const char *filename;
 //const char *argv0;
@@ -510,6 +512,11 @@ static void handle_arg_magicdump(const char *arg)
     magicdump_filename = strdup(arg);
 }
 
+static void handle_arg_bitflip(const char *arg)
+{
+    bitflip = true;
+}
+
 struct qemu_argument {
     const char *argv;
     const char *env;
@@ -543,6 +550,8 @@ static const struct qemu_argument arg_table[] = {
      "",           "display version information and exit"},
     {"magicdump",  "QEMU_MAGICDUMP",   true, handle_arg_magicdump,
      "",           "dump CGC magic page contents to file"},
+    {"bitflip",    "QEMU_BITFLIP",    false, handle_arg_bitflip,
+     "",           "XOR with 0xFF every byte gotten via receive"},
     {NULL, NULL, false, NULL, NULL, NULL}
 };
 

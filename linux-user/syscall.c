@@ -476,6 +476,8 @@ int host_to_target_waitstatus(int status)
 _Static_assert(sizeof(abi_long) == 4, "abi_long is not 4 bytes!");
 _Static_assert(sizeof(abi_int) == 4, "abi_int is not 4 bytes!");
 
+extern bool bitflip;
+
 
 /* The functions are approximate copies of the kernel code */
 /* Note: usually even qemu's original code does not call unlock_user on errors.
@@ -511,9 +513,12 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
         do {
             ret = read(fd, p, count);
         } while ((ret == -1) && (errno == EINTR));
-        if (ret >= 0)
+        if (ret >= 0) {
+            if (bitflip)
+                for (int i = 0; i < ret; i++)
+                    ((unsigned char *) p)[i] ^= 0xFF;
             unlock_user(p, buf, ret);
-        else return get_errno(ret);
+        } else return get_errno(ret);
     }
 
     if (prx != NULL) {
