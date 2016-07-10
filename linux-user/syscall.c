@@ -593,6 +593,7 @@ static abi_long do_receive(CPUX86State *env, abi_long fd, abi_ulong buf, abi_lon
 #else
 static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
 #endif
+#ifdef AFL
     /* start the forkserver on the first call to receive to save even more time */
     if (first_recv)
     {
@@ -600,6 +601,7 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
         afl_forkserver(env);
         first_recv = 0;
     }
+#endif
 
     int ret = 0;
     abi_ulong *p; abi_long *prx;
