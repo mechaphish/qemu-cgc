@@ -50,6 +50,7 @@ unsigned long mmap_min_addr;
 #if defined(CONFIG_USE_GUEST_BASE)
 unsigned long guest_base;
 int have_guest_base;
+int seed_passed = 0;
 #if (TARGET_LONG_BITS == 32) && (HOST_LONG_BITS == 64)
 /*
  * When running 32-on-64 we should make sure we can fit all of the possible
@@ -62,6 +63,12 @@ int have_guest_base;
 #else
 #error 32-on-64 only
 #endif
+#endif
+
+#define CGC_IDT_BASE 0x1000
+
+#ifdef TRACER
+extern char *predump_file;
 #endif
 
 static void usage(void);
@@ -474,6 +481,9 @@ static void handle_arg_randseed(const char *arg)
         fprintf(stderr, "Invalid seed number: %s\n", arg);
         exit(1);
     }
+
+    seed_passed = 1;
+
     srand(seed);
 }
 
@@ -506,6 +516,13 @@ static void handle_arg_version(const char *arg)
            ", Copyright (c) 2003-2008 Fabrice Bellard\nSHELLPHISH MODDED FOR CGC, ASK Nick or Jacopo\n");
     exit(0);
 }
+
+#ifdef TRACER
+static void handle_predump(const char *arg)
+{
+        predump_file = arg;
+}
+#endif
 
 static void handle_arg_magicdump(const char *arg)
 {
@@ -546,6 +563,10 @@ static const struct qemu_argument arg_table[] = {
      "",           "log system calls"},
     {"seed",       "QEMU_RAND_SEED",   true,  handle_arg_randseed,
      "",           "Seed for pseudo-random number generator"},
+#ifdef TRACER
+    {"predump",    "",                 true,  handle_predump,
+     "",           "File to dump state to at the point symbolic data is about to enter the program"},
+#endif
     {"version",    "QEMU_VERSION",     false, handle_arg_version,
      "",           "display version information and exit"},
     {"magicdump",  "QEMU_MAGICDUMP",   true, handle_arg_magicdump,
@@ -899,7 +920,7 @@ int main(int argc, char **argv, char **envp)
 #else
     env->idt.limit = 255;
 #endif
-    env->idt.base = target_mmap(0, sizeof(uint64_t) * (env->idt.limit + 1),
+    env->idt.base = target_mmap(CGC_IDT_BASE, sizeof(uint64_t) * (env->idt.limit + 1),
                                 PROT_READ|PROT_WRITE,
                                 MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
     idt_table = g2h(env->idt.base);
@@ -928,7 +949,8 @@ int main(int argc, char **argv, char **envp)
     /* linux segment setup */
     {
         uint64_t *gdt_table;
-        env->gdt.base = target_mmap(0, sizeof(uint64_t) * TARGET_GDT_ENTRIES,
+        unsigned int gdt_base = ((((CGC_IDT_BASE + sizeof(uint64_t) * (env->idt.limit + 1)) / 0x1000) + 1) * 0x1000);
+        env->gdt.base = target_mmap(gdt_base, sizeof(uint64_t) * TARGET_GDT_ENTRIES,
                                     PROT_READ|PROT_WRITE,
                                     MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
         env->gdt.limit = sizeof(uint64_t) * TARGET_GDT_ENTRIES - 1;

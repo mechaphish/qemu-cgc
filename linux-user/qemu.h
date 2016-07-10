@@ -223,6 +223,7 @@ extern char *magicdump_filename;
 
 /* main.c */
 static const unsigned long guest_stack_size = 8 * 1024 * 1024; //extern unsigned long guest_stack_size;
+extern int seed_passed;
 
 /* user access */
 

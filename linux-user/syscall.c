@@ -186,6 +186,108 @@ _syscall6(int, sys_pselect6, int, nfds, fd_set *, readfds, fd_set *, writefds,
           fd_set *, exceptfds, struct timespec *, timeout, void *, sig);
 #endif
 
+#if defined(TRACER) || defined(EXIT_ON_DOUBLE_RECEIVE)
+static unsigned zero_recv_hits = 0;
+static unsigned first_recv_hit = false;
+#endif
+#ifdef TRACER
+char *predump_file = NULL;
+
+static int predump_one(void *priv, target_ulong start,
+    target_ulong end, unsigned long prot)
+{
+    FILE *f;
+    target_ulong length;
+
+    f = (FILE *)priv;
+
+    length = end - start;
+
+    fwrite(&start, sizeof(target_ulong), 1, f);
+    fwrite(&end, sizeof(target_ulong), 1, f);
+    fwrite(&prot, sizeof(target_ulong), 1, f);
+    fwrite(&length, sizeof(target_ulong), 1, f);
+
+    fwrite(g2h(start), length, 1, f);
+
+    return 0;
+}
+
+static int do_predump(char *file, CPUX86State *env)
+{
+    FILE *f;
+
+    f = fopen(file, "w");
+    if (f == NULL) {
+        perror("predump file open");
+        return -1;
+    }
+
+    walk_memory_regions(f, predump_one);
+
+    fwrite("HEAP", 4, 1, f);
+    fwrite(&mmap_next_start, 4, 1, f);
+
+    fwrite("REGS", 4, 1, f);
+    /* write out registers */
+    fwrite(&env->regs[R_EAX], 4, 1, f);
+    fwrite(&env->regs[R_EBX], 4, 1, f);
+    fwrite(&env->regs[R_ECX], 4, 1, f);
+    fwrite(&env->regs[R_EDX], 4, 1, f);
+    fwrite(&env->regs[R_ESI], 4, 1, f);
+    fwrite(&env->regs[R_EDI], 4, 1, f);
+    fwrite(&env->regs[R_EBP], 4, 1, f);
+    fwrite(&env->regs[R_ESP], 4, 1, f);
+
+    /* write out d flag */
+    fwrite(&env->df, 4, 1, f);
+
+    /* write out eip */
+    fwrite(&env->eip, 4, 1, f);
+
+    /* write out fp registers */
+    fwrite(&env->fpregs[0], sizeof(FPReg), 1, f);
+    fwrite(&env->fpregs[1], sizeof(FPReg), 1, f);
+    fwrite(&env->fpregs[2], sizeof(FPReg), 1, f);
+    fwrite(&env->fpregs[3], sizeof(FPReg), 1, f);
+    fwrite(&env->fpregs[4], sizeof(FPReg), 1, f);
+    fwrite(&env->fpregs[5], sizeof(FPReg), 1, f);
+    fwrite(&env->fpregs[6], sizeof(FPReg), 1, f);
+    fwrite(&env->fpregs[7], sizeof(FPReg), 1, f);
+
+    /* write out fp tags */
+    fwrite(&env->fptags[0], 1, 1, f);
+    fwrite(&env->fptags[1], 1, 1, f);
+    fwrite(&env->fptags[2], 1, 1, f);
+    fwrite(&env->fptags[3], 1, 1, f);
+    fwrite(&env->fptags[4], 1, 1, f);
+    fwrite(&env->fptags[5], 1, 1, f);
+    fwrite(&env->fptags[6], 1, 1, f);
+    fwrite(&env->fptags[7], 1, 1, f);
+
+    /* ftop */
+    fwrite(&env->fpstt, 4, 1, f);
+
+    /* sseround */
+    fwrite(&env->mxcsr, 4, 1, f);
+
+    /* write out xmm registers */
+    fwrite(&env->xmm_regs[0], 16, 1, f);
+    fwrite(&env->xmm_regs[1], 16, 1, f);
+    fwrite(&env->xmm_regs[2], 16, 1, f);
+    fwrite(&env->xmm_regs[3], 16, 1, f);
+    fwrite(&env->xmm_regs[4], 16, 1, f);
+    fwrite(&env->xmm_regs[5], 16, 1, f);
+    fwrite(&env->xmm_regs[6], 16, 1, f);
+    fwrite(&env->xmm_regs[7], 16, 1, f);
+
+    fclose(f);
+    return 0;
+}
+#endif /* TRACER */
+
+
+
 static inline int host_to_target_errno(int err)
 {
     /* From binfmt_cgc.c cgc_map_err */
@@ -483,12 +585,29 @@ extern bool bitflip;
 /* Note: usually even qemu's original code does not call unlock_user on errors.
  *       (And unless DEBUG_REMAP is defined it's a no-op anyway.) */
 
+#if defined(TRACER) || defined(EXIT_ON_DOUBLE_RECEIVE)
+static abi_long do_receive(CPUX86State *env, abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
+#else
 static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
+#endif
     int ret = 0;
     abi_ulong *p; abi_long *prx;
 
     /* adjust receive to use stdin if it requests stdout */
     if (fd == 1) fd = 0;
+
+#ifdef TRACER
+    /* predump the state for cle */
+    if (!first_recv_hit)
+    {
+        if (predump_file)
+        {
+            do_predump(predump_file, env);
+            exit_group(0);
+        }
+        first_recv_hit = true;
+    }
+#endif
 
     if (p_rx_bytes != 0) {
         if (!(prx = lock_user(VERIFY_WRITE, p_rx_bytes, 4, 0)))
@@ -520,6 +639,22 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
             unlock_user(p, buf, ret);
         } else return get_errno(ret);
     }
+
+
+#if defined(TRACER) || defined(EXIT_ON_DOUBLE_RECEIVE)
+    /* if we recv 0 two times in a row exit */
+    if (ret == 0)
+    {
+        if (zero_recv_hits > 0)
+            exit_group(1);
+        else
+            zero_recv_hits++;
+    }
+    else
+    {
+        zero_recv_hits = 0;
+    }
+#endif
 
     if (prx != NULL) {
         __put_user(ret, prx);
@@ -594,7 +729,9 @@ static abi_long do_random(abi_ulong buf, abi_long count, abi_ulong p_rnd_out)
 
     for (i = 0; i < count; i += sizeof(randval)) {
         _Static_assert(RAND_MAX >= INT16_MAX, "I rely on RAND_MAX giving at least 16 random bits");
-        randval = rand() & 0xFFFFu;
+        randval = 0x4141;
+        if (seed_passed)
+            randval = rand() & 0xFFFFu;
         size = ((count - i) < sizeof(randval)) ? (count - i) : sizeof(randval);
         if (size == 1) {
             ret = put_user_u8((uint8_t) randval, buf + i);
@@ -767,7 +904,11 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
 
     switch(num) {
     case TARGET_NR_receive:
+#if defined(TRACER) || defined(EXIT_ON_DOUBLE_RECEIVE)
+        ret = do_receive(cpu_env, arg1, arg2, arg3, arg4);
+#else
         ret = do_receive(arg1, arg2, arg3, arg4);
+#endif
         break;
     case TARGET_NR_transmit:
         ret = do_transmit(arg1, arg2, arg3, arg4);
