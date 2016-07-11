@@ -193,6 +193,9 @@ unsigned first_recv = 1;
 static unsigned zero_recv_hits = 0;
 static unsigned first_recv_hit = false;
 #endif
+
+FILE *receive_count_fp = NULL;
+
 #ifdef TRACER
 char *predump_file = NULL;
 
@@ -652,6 +655,9 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
                 int i;
                 for (i = 0; i < ret; i++)
                     ((unsigned char *) p)[i] ^= 0xFF;
+            }
+            if (receive_count_fp) {
+                fprintf(receive_count_fp, "%u %u\n", ret, count);
             }
             unlock_user(p, buf, ret);
         } else return get_errno(ret);

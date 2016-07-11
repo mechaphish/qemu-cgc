@@ -70,6 +70,7 @@ int seed_passed = 0;
 #ifdef TRACER
 extern char *predump_file;
 #endif
+extern FILE *receive_count_fp;
 
 static void usage(void);
 
@@ -524,6 +525,17 @@ static void handle_predump(const char *arg)
 }
 #endif
 
+static void handle_receive_count(const char *arg)
+{
+        receive_count_fp = fopen(arg, "wb");
+        if (!receive_count_fp) {
+            printf("failed to open receive_count file\n");
+            exit(1);
+        }
+
+        setvbuf(receive_count_fp, NULL, _IOLBF, 0);
+}
+
 static void handle_arg_magicdump(const char *arg)
 {
     magicdump_filename = strdup(arg);
@@ -567,6 +579,8 @@ static const struct qemu_argument arg_table[] = {
     {"predump",    "",                 true,  handle_predump,
      "",           "File to dump state to at the point symbolic data is about to enter the program"},
 #endif
+    {"receive_count",    "",           true,  handle_receive_count,
+     "",           "File to dump receive counting to"},
     {"version",    "QEMU_VERSION",     false, handle_arg_version,
      "",           "display version information and exit"},
     {"magicdump",  "QEMU_MAGICDUMP",   true, handle_arg_magicdump,
