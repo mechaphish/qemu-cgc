@@ -781,6 +781,9 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
     abi_ulong *p;
     abi_long ret;
 
+    if (len == 0) // ABI-specified, vagrant returns this before EFAULT
+        return TARGET_EINVAL;
+
     if (exec)
         prot |= PROT_EXEC;
 
