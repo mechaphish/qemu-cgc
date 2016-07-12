@@ -517,10 +517,13 @@ static void handle_arg_version(const char *arg)
            ", Copyright (c) 2003-2008 Fabrice Bellard\nSHELLPHISH MODDED FOR CGC, ASK Nick or Jacopo\n");
 
 #ifdef TRACER
-    printf("Configured with -DTRACER\n"):
+    printf("Configured with -DTRACER\n");
 #endif
 #ifdef AFL
-    printf("Configured with -DAFL\n"):
+    printf("Configured with -DAFL\n");
+#endif
+#if !defined(TRACER) && !defined(AFL)
+    printf("[base config version]\n");
 #endif
     exit(0);
 }
