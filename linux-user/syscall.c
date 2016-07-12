@@ -834,6 +834,10 @@ static abi_long do_deallocate(abi_ulong start, abi_ulong len)
 
     aligned_len = allowed_length;
 
+    // No deallocating the flag page! (check from binfmt_cgc.c)
+    if (!((start + aligned_len) <= 0x4347c000 || start >= (0x4347c000 + 4096)))
+        return TARGET_EINVAL;
+
     ret = target_munmap(start, aligned_len);
 
     /* target_munmap returns either 0 or the errno * -1 */
