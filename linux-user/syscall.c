@@ -634,7 +634,7 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
 
     /* Shortens the count to valid pages only.
      * TODO: check, see translate_all.c */
-    const abi_long req_count = count;
+    __attribute__((unused)) const abi_long req_count = count;
     count = valid_len(buf, count, PAGE_READ|PAGE_WRITE);
 #ifdef DEBUG_LENIENT_LENGTHS
     if (count < req_count)
@@ -700,7 +700,7 @@ static abi_long do_transmit(abi_long fd, abi_ulong buf, abi_long count, abi_ulon
 
     /* Shortens the count to valid pages only.
      * TODO: check, see translate_all.c */
-    const abi_long req_count = count;
+    __attribute__((unused)) const abi_long req_count = count;
     count = valid_len(buf, count, PAGE_READ);
 #ifdef DEBUG_LENIENT_LENGTHS
     if (count < req_count)
@@ -743,7 +743,7 @@ static abi_long do_random(abi_ulong buf, abi_long count, abi_ulong p_rnd_out)
 
     /* Shortens the count to valid pages only.
      * TODO: check, see translate_all.c */
-    const abi_long req_count = count;
+    __attribute__((unused)) const abi_long req_count = count;
     count = valid_len(buf, count, PAGE_READ|PAGE_WRITE);
 #ifdef DEBUG_LENIENT_LENGTHS
     if (count < req_count)
