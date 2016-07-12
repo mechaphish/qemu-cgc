@@ -819,17 +819,22 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
 static abi_long do_deallocate(abi_ulong start, abi_ulong len)
 {
     abi_long ret;
-
     abi_ulong aligned_len = ((len + 0xfff) / 0x1000) * 0x1000;
+    abi_ulong allowed_length = 0;
+
+    // ABI-specified: EINVAL on misaligned || len == 0
+    if (((start % 4096) != 0) || (len == 0))
+        return TARGET_EINVAL;
+    if ((start + aligned_len) > reserved_va) // TODO: "outside the valid address range"...
+        return TARGET_EINVAL;
 
     // HACK! check to see if the page is mapped, if not deallocate fails
-    abi_ulong allowed_length = 0;
     while ((lock_user(VERIFY_WRITE, start, allowed_length + 0x1000, 0)) && allowed_length < aligned_len) {
         allowed_length += 0x1000;
     }
 
     if (allowed_length == 0) {
-        return 0;
+        return 0; // Apparently that's what the ABI does
     }
 
     aligned_len = allowed_length;
