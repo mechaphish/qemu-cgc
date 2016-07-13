@@ -186,11 +186,13 @@ _syscall6(int, sys_pselect6, int, nfds, fd_set *, readfds, fd_set *, writefds,
           fd_set *, exceptfds, struct timespec *, timeout, void *, sig);
 #endif
 
+int enabled_double_empty_exiting = 0;
+
 #ifdef AFL
 unsigned first_recv = 1;
 #endif
-#if defined(TRACER) || defined(AFL)
 static unsigned zero_recv_hits = 0;
+#if defined(TRACER) || defined(AFL)
 static unsigned first_recv_hit = false;
 #endif
 
@@ -664,20 +666,20 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
     }
 
 
-#if defined(TRACER) || defined(AFL)
-    /* if we recv 0 two times in a row exit */
-    if (ret == 0)
-    {
-        if (zero_recv_hits > 0)
-            exit_group(1);
+    if (enabled_double_empty_exiting) {
+        /* if we recv 0 two times in a row exit */
+        if (ret == 0)
+        {
+            if (zero_recv_hits > 0)
+                exit_group(1);
+            else
+                zero_recv_hits++;
+        }
         else
-            zero_recv_hits++;
+        {
+            zero_recv_hits = 0;
+        }
     }
-    else
-    {
-        zero_recv_hits = 0;
-    }
-#endif
 
     if (prx != NULL) {
         __put_user(ret, prx);

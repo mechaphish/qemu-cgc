@@ -70,6 +70,7 @@ int seed_passed = 0;
 #ifdef TRACER
 extern char *predump_file;
 #endif
+extern int enabled_double_empty_exiting;
 extern FILE *receive_count_fp;
 
 static void usage(void);
@@ -546,6 +547,11 @@ static void handle_receive_count(const char *arg)
         setvbuf(receive_count_fp, NULL, _IOLBF, 0);
 }
 
+static void handle_enable_double_empty_exiting(const char *arg)
+{
+    enabled_double_empty_exiting = 1;
+}
+
 static void handle_arg_magicdump(const char *arg)
 {
     magicdump_filename = strdup(arg);
@@ -591,6 +597,8 @@ static const struct qemu_argument arg_table[] = {
 #endif
     {"receive_count",    "",           true,  handle_receive_count,
      "",           "File to dump receive counting to"},
+    {"enable_double_empty_exiting",    "",           false,  handle_enable_double_empty_exiting,
+     "",           "Enable the double empty exiting strategy"},
     {"version",    "QEMU_VERSION",     false, handle_arg_version,
      "",           "display version information and exit"},
     {"magicdump",  "QEMU_MAGICDUMP",   true, handle_arg_magicdump,
@@ -767,7 +775,11 @@ int main(int argc, char **argv, char **envp)
     cpudef_setup(); /* parse cpu definitions in target config file (TBD) */
 #endif
 
-    /* we want rand to be consistent across runs */
+#if defined(TRACER) || defined(AFL)
+    enabled_double_empty_exiting = 1;
+#endif
+
+    /* we want rand to be consistent across runs (when the seed is not specified) */
     srand(0);
 
     optind = parse_args(argc, argv);
