@@ -219,7 +219,7 @@ void mmap_fork_start(void);
 void mmap_fork_end(int child);
 
 /* linuxload.c */
-extern char *magicdump_filename;
+extern char *magicdump_filename, *magicpregen_filename;
 
 /* main.c */
 static const unsigned long guest_stack_size = 8 * 1024 * 1024; //extern unsigned long guest_stack_size;

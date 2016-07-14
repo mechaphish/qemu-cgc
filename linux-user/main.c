@@ -557,6 +557,11 @@ static void handle_arg_magicdump(const char *arg)
     magicdump_filename = strdup(arg);
 }
 
+static void handle_arg_magicpregen(const char *arg)
+{
+    magicpregen_filename = strdup(arg);
+}
+
 static void handle_arg_bitflip(const char *arg)
 {
     bitflip = 1;
@@ -605,6 +610,8 @@ static const struct qemu_argument arg_table[] = {
      "",           "dump CGC magic page contents to file"},
     {"bitflip",    "QEMU_BITFLIP",    false, handle_arg_bitflip,
      "",           "XOR with 0xFF every byte gotten via receive"},
+    {"magicpregen","QEMU_MAGICPREGEN", true, handle_arg_magicpregen,
+     "",           "read the flag page content from this file"},
     {NULL, NULL, false, NULL, NULL, NULL}
 };
 
