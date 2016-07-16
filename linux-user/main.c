@@ -536,6 +536,35 @@ static void handle_predump(const char *arg)
 }
 #endif
 
+static void handle_memory_limit(const char *arg)
+{
+    struct rlimit r;
+    unsigned long long mem_limit;
+    char suffix;
+
+    /* stripped from AFL */
+    if (sscanf(arg, "%llu%c", &mem_limit, &suffix) < 1) {
+        printf("bad syntax used for -m\n");
+        exit(1);
+    }
+
+    switch (suffix) {
+        case 'T': mem_limit *= 1024 * 1024; break;
+        case 'G': mem_limit *= 1024; break;
+        case 'k': mem_limit /= 1024; break;
+        case 'M': break;
+
+        default: printf("Unsupported suffix\n"); exit(1);
+    }
+    printf("mem_limit: %#x\n", mem_limit);
+    printf("suffix: %c\n", suffix);
+
+    r.rlim_max = r.rlim_cur = mem_limit << 20;
+
+    setrlimit(RLIMIT_AS, &r);
+
+}
+
 static void handle_receive_count(const char *arg)
 {
         receive_count_fp = fopen(arg, "wb");
@@ -600,6 +629,8 @@ static const struct qemu_argument arg_table[] = {
     {"predump",    "",                 true,  handle_predump,
      "",           "File to dump state to at the point symbolic data is about to enter the program"},
 #endif
+    {"m",          "",                 true,  handle_memory_limit,
+     "", "Set an upper limit on memory"},
     {"receive_count",    "",           true,  handle_receive_count,
      "",           "File to dump receive counting to"},
     {"enable_double_empty_exiting",    "",           false,  handle_enable_double_empty_exiting,
