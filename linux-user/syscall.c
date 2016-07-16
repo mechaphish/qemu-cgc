@@ -656,14 +656,15 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
             if (bitflip) {
                 int i;
                 for (i = 0; i < ret; i++){
-                    if(p[i]==0x00){
-                        ((unsigned char *) p)[i] = 0x43;
-                    }else if(p[i]==0x43){
-                        ((unsigned char *) p)[i] = 0x0a;
-                    }else if(p[i]==0xa){
-                        ((unsigned char *) p)[i] = 0x31;
-                    }else if(p[i]==0x31){
-                        ((unsigned char *) p)[i] = 0x00;
+                    unsigned char* pc = (unsigned char*)p;
+                    if(pc[i]==0x00){
+                        pc[i] = 0x43;
+                    }else if(pc[i]==0x43){
+                        pc[i] = 0x0a;
+                    }else if(pc[i]==0xa){
+                        pc[i] = 0x31;
+                    }else if(pc[i]==0x31){
+                        pc[i] = 0x00;
                     }
                 }
             }
