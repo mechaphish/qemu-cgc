@@ -171,8 +171,10 @@ static type name (type1 arg1,type2 arg2,type3 arg3,type4 arg4,type5 arg5,	\
 }
 
 
+#ifndef AFL
 #ifdef __NR_exit_group
 _syscall1(int,exit_group,int,error_code)
+#endif
 #endif
 
 
@@ -187,6 +189,18 @@ _syscall6(int, sys_pselect6, int, nfds, fd_set *, readfds, fd_set *, writefds,
 #endif
 
 int enabled_double_empty_exiting = 0;
+
+#ifdef AFL
+int possibly_controlled_buf = 0;
+
+
+int exit_group(int error_code) {
+    if (possibly_controlled_buf)
+        raise(SIGSEGV);
+
+    syscall(__NR_exit_group, error_code);
+}
+#endif
 
 #ifdef AFL
 unsigned first_recv = 1;
@@ -630,8 +644,12 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
 #endif
 
     if (p_rx_bytes != 0) {
-        if (!(prx = lock_user(VERIFY_WRITE, p_rx_bytes, 4, 0)))
+        if (!(prx = lock_user(VERIFY_WRITE, p_rx_bytes, 4, 0))) {
+#ifdef AFL
+            possibly_controlled_buf = 1;
+#endif
             return TARGET_EFAULT;
+        }
     } else prx = NULL;
 
     /* Shortens the count to valid pages only.
@@ -719,8 +737,12 @@ static abi_long do_transmit(abi_long fd, abi_ulong buf, abi_long count, abi_ulon
         fprintf(stderr, "FOR_CGC: Pre-shortening transmit count=%d to %d\n", req_count, count);
 #endif
 
-    if (!(p = lock_user(VERIFY_READ, buf, count, 1)))
+    if (!(p = lock_user(VERIFY_READ, buf, count, 1))) {
+#ifdef AFL
+        possibly_controlled_buf = 1;
+#endif
         return TARGET_EFAULT;
+    }
     if (count < 0) /* The kernel does this in rw_verify_area, if I understand correctly */
         return TARGET_EINVAL;
 
