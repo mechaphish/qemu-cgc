@@ -22,7 +22,9 @@
 
 #define THREAD __thread
 
+/* https://github.com/CyberGrandChallenge/libcgc/blob/master/cgcabi.md */
 #define CGC_MAGIC_PAGE_ADDR 0x4347c000
+#define CGC_INITIAL_SP 0xbaaaaffcu
 
 /* This struct is used to hold certain information about the image.
  * Basically, it replicates in user space what would be certain

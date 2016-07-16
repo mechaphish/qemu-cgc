@@ -584,7 +584,7 @@ static void host_signal_handler(int host_signum, siginfo_t *info,
 
     /* handle stack growth */
     unsigned long vaddr = (h2g_nocheck(info->si_addr) / 0x1000) * 0x1000;
-    if (host_signum == TARGET_SIGSEGV && vaddr >= max_stack_top) {
+    if (host_signum == TARGET_SIGSEGV && vaddr >= max_stack_top && vaddr < cgc_stack_top) {
 
         target_mmap(vaddr, cgc_stack_top - vaddr, PROT_READ | PROT_WRITE | PROT_EXEC,
                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);

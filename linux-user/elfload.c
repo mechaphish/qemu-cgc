@@ -72,10 +72,6 @@ unsigned long max_stack_top;
 #define ELF_CLASS       ELFCLASS32
 #define ELF_ARCH        EM_386
 
-/* https://github.com/CyberGrandChallenge/libcgc/blob/master/cgcabi.md */
-#define CGC_MAGIC_PAGE_ADDR 0x4347c000
-#define CGC_INITIAL_SP 0xbaaaaffcu
-
 static inline void init_thread(struct target_pt_regs *regs,
                                struct image_info *infop)
 {
