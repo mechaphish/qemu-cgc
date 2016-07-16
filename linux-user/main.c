@@ -71,6 +71,7 @@ int seed_passed = 0;
 extern char *predump_file;
 #endif
 extern int enabled_double_empty_exiting;
+extern int report_bad_args;
 extern FILE *receive_count_fp;
 
 static void usage(void);
@@ -563,6 +564,11 @@ static void handle_memory_limit(const char *arg)
 
 }
 
+static void handle_report_bad_args(const char *arg)
+{
+    report_bad_args = 1;
+}
+
 static void handle_receive_count(const char *arg)
 {
         receive_count_fp = fopen(arg, "wb");
@@ -629,6 +635,8 @@ static const struct qemu_argument arg_table[] = {
 #endif
     {"m",          "",                 true,  handle_memory_limit,
      "", "Set an upper limit on memory"},
+    {"report_bad_args",          "",   false, handle_report_bad_args,
+     "", "Report potentially dangerous arguments passed to receive and transmit (with a SIGSEGV)"},
     {"receive_count",    "",           true,  handle_receive_count,
      "",           "File to dump receive counting to"},
     {"enable_double_empty_exiting",    "",           false,  handle_enable_double_empty_exiting,

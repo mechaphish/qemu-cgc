@@ -188,6 +188,7 @@ _syscall6(int, sys_pselect6, int, nfds, fd_set *, readfds, fd_set *, writefds,
           fd_set *, exceptfds, struct timespec *, timeout, void *, sig);
 #endif
 
+int report_bad_args = 0;
 int enabled_double_empty_exiting = 0;
 
 #ifdef AFL
@@ -645,9 +646,7 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
 
     if (p_rx_bytes != 0) {
         if (!(prx = lock_user(VERIFY_WRITE, p_rx_bytes, 4, 0))) {
-#ifdef AFL
-            possibly_controlled_buf = 1;
-#endif
+
             return TARGET_EFAULT;
         }
     } else prx = NULL;
@@ -661,8 +660,15 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
         fprintf(stderr, "FOR_CGC: Pre-shortening receive count=%d to %d\n", req_count, count);
 #endif
 
-    if (!(p = lock_user(VERIFY_WRITE, buf, count, 0)))
+    if (!(p = lock_user(VERIFY_WRITE, buf, count, 0))) {
+#ifdef AFL
+            possibly_controlled_buf = 1;
+#endif
+            if (report_bad_args)
+                raise(SIGSEGV);
+
         return TARGET_EFAULT;
+    }
     if (count < 0) /* The kernel does this in rw_verify_area, if I understand correctly */
         return TARGET_EINVAL;
 
@@ -741,6 +747,9 @@ static abi_long do_transmit(abi_long fd, abi_ulong buf, abi_long count, abi_ulon
 #ifdef AFL
         possibly_controlled_buf = 1;
 #endif
+        if (report_bad_args)
+            raise(SIGSEGV);
+
         return TARGET_EFAULT;
     }
     if (count < 0) /* The kernel does this in rw_verify_area, if I understand correctly */
