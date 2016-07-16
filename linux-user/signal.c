@@ -587,8 +587,6 @@ static void host_signal_handler(int host_signum, siginfo_t *info,
     if (host_signum == TARGET_SIGSEGV && vaddr == cgc_stack_top - 0x1000) {
 
         /* enforce the max stack size */
-        printf("cgc_stack_top: %#x\n", cgc_stack_top);
-        printf("max_stack_top: %#x\n", max_stack_top);
         if (cgc_stack_top != max_stack_top) {
 
             cgc_stack_top -= 0x1000;
