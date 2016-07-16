@@ -556,8 +556,6 @@ static void handle_memory_limit(const char *arg)
 
         default: printf("Unsupported suffix\n"); exit(1);
     }
-    printf("mem_limit: %#x\n", mem_limit);
-    printf("suffix: %c\n", suffix);
 
     r.rlim_max = r.rlim_cur = mem_limit << 20;
 
