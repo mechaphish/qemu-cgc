@@ -54,7 +54,8 @@ typedef abi_uint        target_gid_t;
 #endif
 typedef abi_int         target_pid_t;
 
-
+unsigned long cgc_stack_top;
+unsigned long max_stack_top;
 
 /* Note: the actual start_mmap is reset in main.c to reserved_va (first), and
  *       to the value copied from the VM later. This is quite weird, but should work. */
@@ -280,10 +281,7 @@ static abi_ulong setup_arg_pages(abi_ulong p, struct linux_binprm *bprm,
 {
     abi_ulong stack_base, size, error;
 
-    size = guest_stack_size;
-
-    assert(size == 8u*1024*1024); /* 8 MB, allocated upfront */
-    /* CGC TODO: The real one auto-grows, do we want this too? */
+    size = 20 * 0x1000;
 
     /* For some weird reason, they start the stack one dword
      * below the top. Not sure if I understand why, there's
@@ -291,6 +289,8 @@ static abi_ulong setup_arg_pages(abi_ulong p, struct linux_binprm *bprm,
      * Anyway, we need to force-align and then dis-align. */
     abi_ulong mmap_stack_top = CGC_INITIAL_SP - (size - 4);
 
+    cgc_stack_top = mmap_stack_top;
+    max_stack_top = CGC_INITIAL_SP - (guest_stack_size - 4);
     /* Yeehaw, CGC binaries all have an executable stack */
     error = target_mmap(mmap_stack_top, size, PROT_READ | PROT_WRITE | PROT_EXEC,
                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);

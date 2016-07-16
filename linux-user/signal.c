@@ -23,6 +23,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <assert.h>
+#include <sys/mman.h>
 #include <sys/ucontext.h>
 #include <sys/resource.h>
 
@@ -31,6 +32,9 @@
 #include "target_signal.h"
 
 //#define DEBUG_SIGNAL
+
+extern unsigned long cgc_stack_top;
+extern unsigned long max_stack_top;
 
 static struct target_sigaltstack target_sigaltstack_used = {
     .ss_sp = 0,
@@ -577,6 +581,23 @@ static void host_signal_handler(int host_signum, siginfo_t *info,
     CPUArchState *env = thread_cpu->env_ptr;
     int sig;
     target_siginfo_t tinfo;
+
+    /* handle stack growth */
+    unsigned long vaddr = (h2g_nocheck(info->si_addr) / 0x1000) * 0x1000;
+    if (host_signum == TARGET_SIGSEGV && vaddr == cgc_stack_top - 0x1000) {
+
+        /* enforce the max stack size */
+        printf("cgc_stack_top: %#x\n", cgc_stack_top);
+        printf("max_stack_top: %#x\n", max_stack_top);
+        if (cgc_stack_top != max_stack_top) {
+
+            cgc_stack_top -= 0x1000;
+            target_mmap(cgc_stack_top, 0x1000, PROT_READ | PROT_WRITE | PROT_EXEC,
+                        MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+            return;
+        }
+
+    }
 
     /* the CPU emulator uses some host signals to detect exceptions,
        we forward to it some signals */
