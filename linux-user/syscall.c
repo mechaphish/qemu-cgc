@@ -655,8 +655,17 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
         if (ret >= 0) {
             if (bitflip) {
                 int i;
-                for (i = 0; i < ret; i++)
-                    ((unsigned char *) p)[i] ^= 0xFF;
+                for (i = 0; i < ret; i++){
+                    if(p[i]==0x00){
+                        ((unsigned char *) p)[i] = 0x43;
+                    }else if(p[i]==0x43){
+                        ((unsigned char *) p)[i] = 0x0a;
+                    }else if(p[i]==0xa){
+                        ((unsigned char *) p)[i] = 0x31;
+                    }else if(p[i]==0x31){
+                        ((unsigned char *) p)[i] = 0x00;
+                    }
+                }
             }
             if (receive_count_fp) {
                 fprintf(receive_count_fp, "%u %u\n", ret, count);
