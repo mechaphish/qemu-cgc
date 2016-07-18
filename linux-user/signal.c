@@ -582,16 +582,38 @@ static void host_signal_handler(int host_signum, siginfo_t *info,
     int sig;
     target_siginfo_t tinfo;
 
-    /* handle stack growth */
+    /* handle stack growth
+     * Note: stack_top ~= "next push address" (lowest valid address) */
     unsigned long vaddr = (h2g_nocheck(info->si_addr) / 0x1000) * 0x1000;
     if (host_signum == TARGET_SIGSEGV && vaddr >= max_stack_top && vaddr < cgc_stack_top) {
+#ifdef DEBUG_STACK
+        fprintf(stderr, "qemu: auto-growing stack of %ld pages (old top %#lx, new %#lx, segfault at %p)\n",
+                (cgc_stack_top-vaddr)/4096, cgc_stack_top, vaddr, info->si_addr);
+#endif
+        assert(((cgc_stack_top - vaddr) % 4096) == 0);
 
-        target_mmap(vaddr, cgc_stack_top - vaddr, PROT_READ | PROT_WRITE | PROT_EXEC,
-                MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-        cgc_stack_top = vaddr;
-        return;
-
+        if ((cgc_stack_top - vaddr) != 4096) {
+#ifdef DEBUG_STACK
+            fprintf(stderr, "qemu: FYI, forbidding stack growth of more than one page at the time! (%d pages, vaddr=%#lx, segfault at %p)",
+                    (cgc_stack_top-vaddr)/4096, cgc_stack_top, vaddr, info->si_addr);
+#endif
+        } else {
+            abi_ulong r = target_mmap(vaddr, cgc_stack_top - vaddr, PROT_READ | PROT_WRITE | PROT_EXEC,
+                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+            if (r != vaddr) {
+                fprintf(stderr, "Failed to grow the stack to vaddr=%#lx, diff %#lx!\n", vaddr, cgc_stack_top-vaddr);
+                fprintf(stderr, "target_mmap returned %u (%s)\n", r, strerror(r));
+                exit(88);
+            }
+            cgc_stack_top = vaddr;
+            return;
+        }
     }
+#ifdef DEBUG_STACK
+    if (host_signum == TARGET_SIGSEGV && vaddr < cgc_stack_top) {
+        fprintf(stderr, "qemu: FYI, going to fail due to excessive stack request. vaddr=%#lx\n", vaddr);
+    }
+#endif
 
     /* the CPU emulator uses some host signals to detect exceptions,
        we forward to it some signals */

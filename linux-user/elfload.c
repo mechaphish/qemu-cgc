@@ -277,7 +277,7 @@ static abi_ulong setup_arg_pages(abi_ulong p, struct linux_binprm *bprm,
 {
     abi_ulong stack_base, size, error;
 
-    size = 20 * 0x1000;
+    size = 33 * 0x1000;
 
     /* For some weird reason, they start the stack one dword
      * below the top. Not sure if I understand why, there's
@@ -285,8 +285,11 @@ static abi_ulong setup_arg_pages(abi_ulong p, struct linux_binprm *bprm,
      * Anyway, we need to force-align and then dis-align. */
     abi_ulong mmap_stack_top = CGC_INITIAL_SP - (size - 4);
 
+    /* top == lowest "allocated" address */
     cgc_stack_top = mmap_stack_top;
     max_stack_top = CGC_INITIAL_SP - (guest_stack_size - 4);
+    assert((CGC_INITIAL_SP + 4 - max_stack_top)/1024/1024 == 8);
+
     /* Yeehaw, CGC binaries all have an executable stack */
     error = target_mmap(mmap_stack_top, size, PROT_READ | PROT_WRITE | PROT_EXEC,
                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
