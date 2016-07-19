@@ -592,12 +592,15 @@ static void host_signal_handler(int host_signum, siginfo_t *info,
 #endif
         assert(((cgc_stack_top - vaddr) % 4096) == 0);
 
+#ifdef STACK_GROW_1PG /* IMPRECISE, there are cases in which this is OK! See  */
         if ((cgc_stack_top - vaddr) != 4096) {
 #ifdef DEBUG_STACK
             fprintf(stderr, "qemu: FYI, forbidding stack growth of more than one page at the time! (%ld pages, vaddr=%#lx, segfault at %p)",
                     (cgc_stack_top-vaddr)/4096, vaddr, info->si_addr);
 #endif
-        } else {
+        } else
+#endif /* STACK_GROW_1PG */
+        {
             abi_ulong r = target_mmap(vaddr, cgc_stack_top - vaddr, PROT_READ | PROT_WRITE | PROT_EXEC,
                     MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
             if (r != vaddr) {
