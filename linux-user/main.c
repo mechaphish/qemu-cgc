@@ -527,6 +527,9 @@ static void handle_arg_version(const char *arg)
 #if !defined(TRACER) && !defined(AFL)
     printf("[base config version]\n");
 #endif
+#ifdef ENFORCE_NX
+    printf("[will enforce NX]\n");
+#endif
     exit(0);
 }
 
