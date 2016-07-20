@@ -521,6 +521,11 @@ static void handle_arg_version(const char *arg)
     printf("qemu-" TARGET_NAME " version " QEMU_VERSION QEMU_PKGVERSION
            ", Copyright (c) 2003-2008 Fabrice Bellard\nSHELLPHISH MODDED FOR CGC, ASK Nick or Jacopo\n");
 
+    printf("******** Multi-CB version *********\n");
+    printf("* Can only run in forkserver mode *\n");
+    printf("* See run_via_fakeforksrv         *\n");
+    printf("***********************************\n");
+
 #ifdef TRACER
     printf("Configured with -DTRACER\n");
 #endif

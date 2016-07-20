@@ -1,5 +1,0 @@
-#!/bin/sh
-
-# Like what AFL does, but without -Werror
-
-CFLAGS="-O3" ./configure --disable-system --enable-linux-user --enable-guest-base --disable-gtk --disable-sdl --disable-vnc --target-list=i386-linux-user --disable-werror --extra-cflags='-g3 -ggdb -gdwarf-4'
