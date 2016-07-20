@@ -723,7 +723,7 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
         } else return get_errno(ret);
     }
 
-
+#if 0   // TODO: multi-cb double-EOF exit
     if (enabled_double_empty_exiting) {
         /* if we recv 0 two times in a row exit */
         if (ret == 0)
@@ -738,6 +738,7 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
             zero_recv_hits = 0;
         }
     }
+#endif
 
     assert(ret >= 0);
     if (ret > 0) {
@@ -746,25 +747,6 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
             MCBDBG("RET received %d bytes [%c ...] (fd=%d, count=%d)", ret, c, fd, count);
         else MCBDBG("RET received %d bytes [0x%02x ...] (fd=%d, count=%d)", ret, c, fd, count);
     } else MCBDBG("RET received NO BYTES (fd=%d, count=%d)", fd, count);
-
-    /* if we recv 0 two times in a row exit */
-    if (ret == 0)
-    {
-#ifdef NO_EXIT_ON_DOUBLE_RECV0
-#  ifdef DEBUG
-        fprintf(stderr, "zero_recv_hits = %d > 0, heuristic would exit! (disabled)\n");
-#  endif
-#else
-        if (zero_recv_hits > 0)
-            exit(1);
-        else
-#endif
-            zero_recv_hits++;
-    }
-    else
-    {
-        zero_recv_hits = 0;
-    }
 
     if (prx != NULL) {
         __put_user(ret, prx);

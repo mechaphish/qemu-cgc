@@ -593,7 +593,10 @@ static void handle_receive_count(const char *arg)
 
 static void handle_enable_double_empty_exiting(const char *arg)
 {
-    enabled_double_empty_exiting = 1;
+    // TODO: multicb version
+    fprintf(stderr, "double-EOF is a TODO for multicb!\n");
+    exit(1);
+    //enabled_double_empty_exiting = 1;
 }
 
 static void handle_arg_magicdump(const char *arg)
@@ -854,7 +857,8 @@ int main(int argc, char **argv, char **envp)
 #endif
 
 #if defined(TRACER) || defined(AFL)
-    enabled_double_empty_exiting = 1;
+    // TODO for multi-cb
+    //enabled_double_empty_exiting = 1;
 #endif
 
     /* we want rand to be consistent across runs (when the seed is not specified) */
