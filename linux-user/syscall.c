@@ -195,8 +195,6 @@ static type name (type1 arg1,type2 arg2,type3 arg3,type4 arg4,type5 arg5,	\
 }
 
 
-#ifndef AFL
-#endif
 
 /* CGC TODO: which select? */
 #if defined(TARGET_NR_pselect6)
@@ -215,11 +213,15 @@ int enabled_double_empty_exiting = 0;
 int possibly_controlled_buf = 0;
 
 
+__attribute__((noreturn))
+static inline
 int exit_group(int error_code) {
     if (possibly_controlled_buf)
         raise(SIGSEGV);
 
     syscall(__NR_exit_group, error_code);
+
+    __builtin_unreachable();
 }
 #endif
 
@@ -628,20 +630,8 @@ extern int bitflip;
 /* Note: usually even qemu's original code does not call unlock_user on errors.
  *       (And unless DEBUG_REMAP is defined it's a no-op anyway.) */
 
-#if defined(TRACER) || defined(AFL)
-static abi_long do_receive(CPUX86State *env, abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
-#else
 static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
-#endif
-#ifdef AFL
-    /* start the forkserver on the first call to receive to save even more time */
-    if (first_recv)
-    {
-        afl_setup();
-        afl_forkserver(env);
-        first_recv = 0;
-    }
-#endif
+    /* NOTE: forkserver logic moved */
 
     int ret = 0;
     abi_ulong *p; abi_long *prx;
@@ -1031,11 +1021,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
     switch(num) {
     case TARGET_NR_receive:
         if (!ran_forkserver_setup) do_forkserver_setup(cpu_env);
-#if defined(TRACER) || defined(AFL)
-        ret = do_receive(cpu_env, arg1, arg2, arg3, arg4);
-#else
         ret = do_receive(arg1, arg2, arg3, arg4);
-#endif
         break;
     case TARGET_NR_transmit:
         if (!ran_forkserver_setup) do_forkserver_setup(cpu_env);

@@ -582,13 +582,16 @@ static void handle_report_bad_args(const char *arg)
 
 static void handle_receive_count(const char *arg)
 {
-        receive_count_fp = fopen(arg, "wb");
-        if (!receive_count_fp) {
-            printf("failed to open receive_count file\n");
-            exit(1);
-        }
-
-        setvbuf(receive_count_fp, NULL, _IOLBF, 0);
+    // TODO: multicb version
+    fprintf(stderr, "NOT SURE ABOUT THIS FOR MULTI-CB\n");
+    exit(1);
+//        receive_count_fp = fopen(arg, "wb");
+//        if (!receive_count_fp) {
+//            printf("failed to open receive_count file\n");
+//            exit(1);
+//        }
+//
+//        setvbuf(receive_count_fp, NULL, _IOLBF, 0);
 }
 
 static void handle_enable_double_empty_exiting(const char *arg)

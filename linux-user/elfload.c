@@ -20,8 +20,6 @@
 #error CGC is i386 only!
 #endif
 
-extern abi_ulong afl_entry_point, afl_start_code, afl_end_code;
-
 
 #ifdef _ARCH_PPC64
 #error removed

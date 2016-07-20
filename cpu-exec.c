@@ -306,8 +306,6 @@ static TranslationBlock *tb_find_slow(CPUArchState *env,
     AFL_QEMU_CPU_SNIPPET1;
 #endif
 
-    AFL_QEMU_CPU_SNIPPET1;
-
  found:
     /* Move the last found TB to the head of the list */
     if (likely(*ptb1)) {
