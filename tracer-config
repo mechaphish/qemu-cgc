@@ -1,0 +1,3 @@
+#!/bin/sh
+
+./cgc_configure_tracer_opt

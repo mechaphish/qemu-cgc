@@ -23,6 +23,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <assert.h>
+#include <sys/mman.h>
 #include <sys/ucontext.h>
 #include <sys/resource.h>
 
@@ -31,6 +32,9 @@
 #include "target_signal.h"
 
 //#define DEBUG_SIGNAL
+
+extern unsigned long cgc_stack_top;
+extern unsigned long max_stack_top;
 
 static struct target_sigaltstack target_sigaltstack_used = {
     .ss_sp = 0,
@@ -577,6 +581,42 @@ static void host_signal_handler(int host_signum, siginfo_t *info,
     CPUArchState *env = thread_cpu->env_ptr;
     int sig;
     target_siginfo_t tinfo;
+
+    /* handle stack growth
+     * Note: stack_top ~= "next push address" (lowest valid address) */
+    unsigned long vaddr = (h2g_nocheck(info->si_addr) / 0x1000) * 0x1000;
+    if (host_signum == TARGET_SIGSEGV && vaddr >= max_stack_top && vaddr < cgc_stack_top) {
+#ifdef DEBUG_STACK
+        fprintf(stderr, "qemu: auto-growing stack of %ld pages (old top %#lx, new %#lx, segfault at %p)\n",
+                (cgc_stack_top-vaddr)/4096, cgc_stack_top, vaddr, info->si_addr);
+#endif
+        assert(((cgc_stack_top - vaddr) % 4096) == 0);
+
+#ifdef STACK_GROW_1PG /* IMPRECISE, there are cases in which this is OK! See  */
+        if ((cgc_stack_top - vaddr) != 4096) {
+#ifdef DEBUG_STACK
+            fprintf(stderr, "qemu: FYI, forbidding stack growth of more than one page at the time! (%ld pages, vaddr=%#lx, segfault at %p)",
+                    (cgc_stack_top-vaddr)/4096, vaddr, info->si_addr);
+#endif
+        } else
+#endif /* STACK_GROW_1PG */
+        {
+            abi_ulong r = target_mmap(vaddr, cgc_stack_top - vaddr, PROT_READ | PROT_WRITE | PROT_EXEC,
+                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+            if (r != vaddr) {
+                fprintf(stderr, "Failed to grow the stack to vaddr=%#lx, diff %#lx!\n", vaddr, cgc_stack_top-vaddr);
+                fprintf(stderr, "target_mmap returned %u (%s)\n", r, strerror(r));
+                exit(88);
+            }
+            cgc_stack_top = vaddr;
+            return;
+        }
+    }
+#ifdef DEBUG_STACK
+    if (host_signum == TARGET_SIGSEGV && vaddr < cgc_stack_top) {
+        fprintf(stderr, "qemu: FYI, going to fail due to excessive stack request. vaddr=%#lx\n", vaddr);
+    }
+#endif
 
     /* the CPU emulator uses some host signals to detect exceptions,
        we forward to it some signals */

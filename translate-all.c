@@ -388,6 +388,7 @@ static PageDesc *page_find_alloc(tb_page_addr_t index, int alloc)
 
 #if defined(CONFIG_USER_ONLY)
     /* We can't use g_malloc because it may recurse into a locked mutex. */
+    /* (Note: error-checking courtesy of AFL */
 # define ALLOC(P, SIZE)                                 \
     do {                                                \
       void* _tmp = mmap(NULL, SIZE, PROT_READ | PROT_WRITE, \
@@ -1329,6 +1330,7 @@ static inline void tb_alloc_page(TranslationBlock *tb,
 
     tb->page_addr[n] = page_addr;
     p = page_find_alloc(page_addr >> TARGET_PAGE_BITS, 1);
+
     tb->page_next[n] = p->first_tb;
 #ifndef CONFIG_USER_ONLY
     page_already_protected = p->first_tb != NULL;
@@ -1337,6 +1339,26 @@ static inline void tb_alloc_page(TranslationBlock *tb,
     invalidate_page_bitmap(p);
 
 #if defined(CONFIG_USER_ONLY)
+
+#ifdef ENFORCE_NX
+    {
+        // ADDED: NX check
+        //        Not sure this covers all, but should be good enough for CGC [J]
+        //        (In particular, may want to go to tb_gen_code, or possibly even find_slow)
+        target_ulong addr;
+        PageDesc *p2;
+        tb_page_addr_t pa = page_addr;
+        pa &= qemu_host_page_mask;
+        for (addr = pa; addr < pa + qemu_host_page_size;
+            addr += TARGET_PAGE_SIZE) {
+            p2 = page_find(addr >> TARGET_PAGE_BITS);
+            if ((p2->flags & PAGE_EXEC) == 0) {
+                fprintf(stderr, "OUR CGC QEMU: NX enforcement! tried tb_alloc_page on page %#x (first page = %#x)\n", addr, page_addr);
+                exit(46); // TODO: what to do? cpu_abort?
+            }
+        }
+    }
+#endif
     if (p->flags & PAGE_WRITE) {
         target_ulong addr;
         PageDesc *p2;

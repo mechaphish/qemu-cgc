@@ -29,6 +29,10 @@ extern abi_ulong afl_entry_point, afl_start_code, afl_end_code;
 
 #define ELF_OSABI   ELFOSABI_SYSV
 
+#ifdef AFL
+extern abi_ulong afl_entry_point, afl_start_code, afl_end_code;
+#endif
+
 
 #ifdef TARGET_WORDS_BIGENDIAN
 #define ELF_DATA        ELFDATA2MSB
@@ -52,7 +56,8 @@ typedef abi_uint        target_gid_t;
 #endif
 typedef abi_int         target_pid_t;
 
-
+unsigned long cgc_stack_top;
+unsigned long max_stack_top;
 
 /* Note: the actual start_mmap is reset in main.c to reserved_va (first), and
  *       to the value copied from the VM later. This is quite weird, but should work. */
@@ -68,10 +73,6 @@ typedef abi_int         target_pid_t;
  */
 #define ELF_CLASS       ELFCLASS32
 #define ELF_ARCH        EM_386
-
-/* https://github.com/CyberGrandChallenge/libcgc/blob/master/cgcabi.md */
-#define CGC_MAGIC_PAGE_ADDR 0x4347c000
-#define CGC_INITIAL_SP 0xbaaaaffcu
 
 static inline void init_thread(struct target_pt_regs *regs,
                                struct image_info *infop)
@@ -278,16 +279,18 @@ static abi_ulong setup_arg_pages(abi_ulong p, struct linux_binprm *bprm,
 {
     abi_ulong stack_base, size, error;
 
-    size = guest_stack_size;
-
-    assert(size == 8u*1024*1024); /* 8 MB, allocated upfront */
-    /* CGC TODO: The real one auto-grows, do we want this too? */
+    size = 33 * 0x1000;
 
     /* For some weird reason, they start the stack one dword
      * below the top. Not sure if I understand why, there's
      * nothing there and push would work anyway!
      * Anyway, we need to force-align and then dis-align. */
     abi_ulong mmap_stack_top = CGC_INITIAL_SP - (size - 4);
+
+    /* top == lowest "allocated" address */
+    cgc_stack_top = mmap_stack_top;
+    max_stack_top = CGC_INITIAL_SP - (guest_stack_size - 4);
+    assert((CGC_INITIAL_SP + 4 - max_stack_top)/1024/1024 == 8);
 
     /* Yeehaw, CGC binaries all have an executable stack */
     error = target_mmap(mmap_stack_top, size, PROT_READ | PROT_WRITE | PROT_EXEC,
@@ -646,7 +649,9 @@ static void load_elf_image(const char *image_name, int image_fd,
     info->brk = 0;
     info->elf_flags = ehdr->e_flags;
 
+#ifdef AFL
     if (!afl_entry_point) afl_entry_point = info->entry;
+#endif
 
     for (i = 0; i < ehdr->e_phnum; i++) {
         struct elf_phdr *eppnt = phdr + i;
@@ -686,11 +691,15 @@ static void load_elf_image(const char *image_name, int image_fd,
             if (elf_prot & PROT_EXEC) {
                 if (vaddr < info->start_code) {
                     info->start_code = vaddr;
+#ifdef AFL
                     if (!afl_start_code) afl_start_code = vaddr;
+#endif
                 }
                 if (vaddr_ef > info->end_code) {
                     info->end_code = vaddr_ef;
+#ifdef AFL
                     if (!afl_end_code) afl_end_code = vaddr_ef;
+#endif
                 }
             }
             if (elf_prot & PROT_WRITE) {

@@ -28,7 +28,9 @@
 #include "exec/memory-internal.h"
 #include "qemu/rcu.h"
 
+#ifdef AFL
 #include "../patches/afl-qemu-cpu-inl.h"
+#endif
 
 /* -icount align implementation. */
 
@@ -300,6 +302,9 @@ static TranslationBlock *tb_find_slow(CPUArchState *env,
    /* if no translated code available, then translate it now */
 
     tb = tb_gen_code(cpu, pc, cs_base, flags, 0);
+#ifdef AFL
+    AFL_QEMU_CPU_SNIPPET1;
+#endif
 
     AFL_QEMU_CPU_SNIPPET1;
 
@@ -497,14 +502,19 @@ int cpu_exec(CPUArchState *env)
                     next_tb = 0;
                     tcg_ctx.tb_ctx.tb_invalidated_flag = 0;
                 }
-
-                /* Note: postponed forkserver setup, see syscall.c */
-                afl_maybe_log(tb->pc);
-
+#ifdef AFL
+                /* remove the forkserver stuff from AFL_QEMU_CPU_SNIPPET2
+                 *                    it's been moved to do_receive */
+                do {
+                    afl_maybe_log(tb->pc);
+                } while(0);
+#endif
                 if (qemu_loglevel_mask(CPU_LOG_EXEC)) {
                     qemu_log("Trace %p [" TARGET_FMT_lx "] %s\n",
                              tb->tc_ptr, tb->pc, lookup_symbol(tb->pc));
                 }
+#ifndef TRACER
+                /* tracer needs to see every basic block transition */
                 /* see if we can patch the calling TB. When the TB
                    spans two pages, we cannot safely do a direct
                    jump. */
@@ -513,6 +523,7 @@ int cpu_exec(CPUArchState *env)
                     tb_add_jump((TranslationBlock *)(next_tb & ~TB_EXIT_MASK),
                                 next_tb & TB_EXIT_MASK, tb);
                 }
+#endif
                 have_tb_lock = false;
                 spin_unlock(&tcg_ctx.tb_ctx.tb_lock);
 

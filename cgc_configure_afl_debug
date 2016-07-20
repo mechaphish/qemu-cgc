@@ -1,0 +1,3 @@
+#!/bin/bash
+
+./configure --disable-system --enable-linux-user --enable-guest-base --disable-gtk --disable-sdl --disable-vnc --target-list=i386-linux-user --enable-debug --disable-werror --extra-cflags='-DAFL -g3 -ggdb -gdwarf-4'

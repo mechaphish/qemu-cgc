@@ -195,6 +195,8 @@ static type name (type1 arg1,type2 arg2,type3 arg3,type4 arg4,type5 arg5,	\
 }
 
 
+#ifndef AFL
+#endif
 
 /* CGC TODO: which select? */
 #if defined(TARGET_NR_pselect6)
@@ -206,8 +208,128 @@ _syscall6(int, sys_pselect6, int, nfds, fd_set *, readfds, fd_set *, writefds,
           fd_set *, exceptfds, struct timespec *, timeout, void *, sig);
 #endif
 
-unsigned do_eof_exit;
-unsigned zero_recv_hits = 0;
+int report_bad_args = 0;
+int enabled_double_empty_exiting = 0;
+
+#ifdef AFL
+int possibly_controlled_buf = 0;
+
+
+int exit_group(int error_code) {
+    if (possibly_controlled_buf)
+        raise(SIGSEGV);
+
+    syscall(__NR_exit_group, error_code);
+}
+#endif
+
+#ifdef AFL
+unsigned first_recv = 1;
+#endif
+static unsigned zero_recv_hits = 0;
+#if defined(TRACER) || defined(AFL)
+static unsigned first_recv_hit = false;
+#endif
+
+FILE *receive_count_fp = NULL;
+
+#ifdef TRACER
+char *predump_file = NULL;
+
+static int predump_one(void *priv, target_ulong start,
+    target_ulong end, unsigned long prot)
+{
+    FILE *f;
+    target_ulong length;
+
+    f = (FILE *)priv;
+
+    length = end - start;
+
+    fwrite(&start, sizeof(target_ulong), 1, f);
+    fwrite(&end, sizeof(target_ulong), 1, f);
+    fwrite(&prot, sizeof(target_ulong), 1, f);
+    fwrite(&length, sizeof(target_ulong), 1, f);
+
+    fwrite(g2h(start), length, 1, f);
+
+    return 0;
+}
+
+static int do_predump(char *file, CPUX86State *env)
+{
+    FILE *f;
+
+    f = fopen(file, "w");
+    if (f == NULL) {
+        perror("predump file open");
+        return -1;
+    }
+
+    walk_memory_regions(f, predump_one);
+
+    fwrite("HEAP", 4, 1, f);
+    fwrite(&mmap_next_start, 4, 1, f);
+
+    fwrite("REGS", 4, 1, f);
+    /* write out registers */
+    fwrite(&env->regs[R_EAX], 4, 1, f);
+    fwrite(&env->regs[R_EBX], 4, 1, f);
+    fwrite(&env->regs[R_ECX], 4, 1, f);
+    fwrite(&env->regs[R_EDX], 4, 1, f);
+    fwrite(&env->regs[R_ESI], 4, 1, f);
+    fwrite(&env->regs[R_EDI], 4, 1, f);
+    fwrite(&env->regs[R_EBP], 4, 1, f);
+    fwrite(&env->regs[R_ESP], 4, 1, f);
+
+    /* write out d flag */
+    fwrite(&env->df, 4, 1, f);
+
+    /* write out eip */
+    fwrite(&env->eip, 4, 1, f);
+
+    /* write out fp registers */
+    fwrite(&env->fpregs[0], sizeof(FPReg), 1, f);
+    fwrite(&env->fpregs[1], sizeof(FPReg), 1, f);
+    fwrite(&env->fpregs[2], sizeof(FPReg), 1, f);
+    fwrite(&env->fpregs[3], sizeof(FPReg), 1, f);
+    fwrite(&env->fpregs[4], sizeof(FPReg), 1, f);
+    fwrite(&env->fpregs[5], sizeof(FPReg), 1, f);
+    fwrite(&env->fpregs[6], sizeof(FPReg), 1, f);
+    fwrite(&env->fpregs[7], sizeof(FPReg), 1, f);
+
+    /* write out fp tags */
+    fwrite(&env->fptags[0], 1, 1, f);
+    fwrite(&env->fptags[1], 1, 1, f);
+    fwrite(&env->fptags[2], 1, 1, f);
+    fwrite(&env->fptags[3], 1, 1, f);
+    fwrite(&env->fptags[4], 1, 1, f);
+    fwrite(&env->fptags[5], 1, 1, f);
+    fwrite(&env->fptags[6], 1, 1, f);
+    fwrite(&env->fptags[7], 1, 1, f);
+
+    /* ftop */
+    fwrite(&env->fpstt, 4, 1, f);
+
+    /* sseround */
+    fwrite(&env->mxcsr, 4, 1, f);
+
+    /* write out xmm registers */
+    fwrite(&env->xmm_regs[0], 16, 1, f);
+    fwrite(&env->xmm_regs[1], 16, 1, f);
+    fwrite(&env->xmm_regs[2], 16, 1, f);
+    fwrite(&env->xmm_regs[3], 16, 1, f);
+    fwrite(&env->xmm_regs[4], 16, 1, f);
+    fwrite(&env->xmm_regs[5], 16, 1, f);
+    fwrite(&env->xmm_regs[6], 16, 1, f);
+    fwrite(&env->xmm_regs[7], 16, 1, f);
+
+    fclose(f);
+    return 0;
+}
+#endif /* TRACER */
+
+
 
 static inline int host_to_target_errno(int err)
 {
@@ -389,7 +511,91 @@ static inline abi_long copy_to_user_timeval(abi_ulong target_tv_addr,
     return 0;
 }
 
+struct sinkhole_entry {
+    abi_ulong addr;
+    size_t length;
+    struct sinkhole_entry *next;
+    struct sinkhole_entry *prev;
+};
 
+struct sinkhole_entry *sinkhole_head = NULL;
+
+void add_sinkhole(abi_ulong, size_t);
+abi_ulong get_max_sinkhole(size_t);
+void print_sinkholes(void);
+
+void add_sinkhole(abi_ulong a, size_t length) {
+    struct sinkhole_entry *nse;
+
+    nse = malloc(sizeof(struct sinkhole_entry));
+    nse->addr = a;
+    nse->length = length;
+    nse->next = NULL;
+    nse->prev = NULL;
+
+    /* head insertion */
+    if (sinkhole_head) {
+
+        nse->next = sinkhole_head;
+        nse->prev = NULL;
+
+        if (sinkhole_head->prev) {
+            printf("ERROR: sinkhole_head->prev should always be NULL\n");
+        }
+
+        sinkhole_head->prev = nse;
+
+        sinkhole_head = nse;
+    } else {
+      sinkhole_head = nse;
+    }
+}
+
+abi_ulong get_max_sinkhole(size_t length) {
+    struct sinkhole_entry *current, *max;
+    abi_ulong max_addr = 0;
+
+    current = sinkhole_head;
+    while(current) {
+        if (current->length >= length && current->addr > max_addr) {
+            max_addr = current->addr; 
+            max = current;
+        }
+        current = current->next;
+    }
+
+    if (!max_addr)
+        return 0;
+
+    size_t remaining = max->length - length;
+    max_addr = max->addr + remaining;
+    max->length = remaining;
+
+    /* remove node if it's empty */
+    if (!max->length) {
+        if (max->prev) {
+            max->prev->next = max->next;
+        }
+        if (max->next) {
+            max->next->prev = max->prev;
+        }
+        if (sinkhole_head == max) {
+            sinkhole_head = max->next;
+        }
+        free(max);
+    }
+
+    return max_addr;
+}
+
+void print_sinkholes(void) {
+    struct sinkhole_entry *current;
+    current = sinkhole_head;
+    while (current) {
+        printf("addr: %x, length: %x\n", current->addr, (unsigned int)current->length);
+        current = current->next;
+    }
+}
 
 void syscall_init(void)
 {
@@ -415,12 +621,28 @@ int host_to_target_waitstatus(int status)
 _Static_assert(sizeof(abi_long) == 4, "abi_long is not 4 bytes!");
 _Static_assert(sizeof(abi_int) == 4, "abi_int is not 4 bytes!");
 
+extern int bitflip;
+
 
 /* The functions are approximate copies of the kernel code */
 /* Note: usually even qemu's original code does not call unlock_user on errors.
  *       (And unless DEBUG_REMAP is defined it's a no-op anyway.) */
 
+#if defined(TRACER) || defined(AFL)
+static abi_long do_receive(CPUX86State *env, abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
+#else
 static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong p_rx_bytes) {
+#endif
+#ifdef AFL
+    /* start the forkserver on the first call to receive to save even more time */
+    if (first_recv)
+    {
+        afl_setup();
+        afl_forkserver(env);
+        first_recv = 0;
+    }
+#endif
+
     int ret = 0;
     abi_ulong *p; abi_long *prx;
     MCBDBG("REQ receive(fd=%d, count=%d)", fd, count);
@@ -428,9 +650,26 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
     /* adjust receive to use stdin if it requests stdout */
     if (fd == 1) fd = 0;
 
+#if defined(TRACER) || defined(AFL)
+    /* predump the state for cle */
+    if (!first_recv_hit)
+    {
+#ifdef TRACER
+        if (predump_file)
+        {
+            do_predump(predump_file, env);
+            exit_group(0);
+        }
+#endif
+        first_recv_hit = true;
+    }
+#endif
+
     if (p_rx_bytes != 0) {
-        if (!(prx = lock_user(VERIFY_WRITE, p_rx_bytes, 4, 0)))
+        if (!(prx = lock_user(VERIFY_WRITE, p_rx_bytes, 4, 0))) {
+
             return TARGET_EFAULT;
+        }
     } else prx = NULL;
 
     /* Shortens the count to valid pages only.
@@ -442,8 +681,15 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
         fprintf(stderr, "FOR_CGC: Pre-shortening receive count=%d to %d\n", req_count, count);
 #endif
 
-    if (!(p = lock_user(VERIFY_WRITE, buf, count, 0)))
+    if (!(p = lock_user(VERIFY_WRITE, buf, count, 0))) {
+#ifdef AFL
+            possibly_controlled_buf = 1;
+#endif
+            if (report_bad_args)
+                raise(SIGSEGV);
+
         return TARGET_EFAULT;
+    }
     if (count < 0) /* The kernel does this in rw_verify_area, if I understand correctly */
         return TARGET_EINVAL;
 
@@ -454,9 +700,43 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
             ret = read(fd, p, count);
             //MCBDBG("  ART read(fd=%d, count=%d) = %d (errno = %d, %s)", fd, count, ret, errno, strerror(errno));
         } while ((ret == -1) && (errno == EINTR));
-        if (ret >= 0)
+        if (ret >= 0) {
+            if (bitflip) {
+                int i;
+                for (i = 0; i < ret; i++){
+                    unsigned char* pc = (unsigned char*)p;
+                    if(pc[i]==0x00){
+                        pc[i] = 0x43;
+                    }else if(pc[i]==0x43){
+                        pc[i] = 0x0a;
+                    }else if(pc[i]==0xa){
+                        pc[i] = 0x31;
+                    }else if(pc[i]==0x31){
+                        pc[i] = 0x00;
+                    }
+                }
+            }
+            if (receive_count_fp) {
+                fprintf(receive_count_fp, "%u %u\n", ret, count);
+            }
             unlock_user(p, buf, ret);
-        else return get_errno(ret);
+        } else return get_errno(ret);
+    }
+
+
+    if (enabled_double_empty_exiting) {
+        /* if we recv 0 two times in a row exit */
+        if (ret == 0)
+        {
+            if (zero_recv_hits > 0)
+                exit_group(1);
+            else
+                zero_recv_hits++;
+        }
+        else
+        {
+            zero_recv_hits = 0;
+        }
     }
 
     assert(ret >= 0);
@@ -515,8 +795,15 @@ static abi_long do_transmit(abi_long fd, abi_ulong buf, abi_long count, abi_ulon
         fprintf(stderr, "FOR_CGC: Pre-shortening transmit count=%d to %d\n", req_count, count);
 #endif
 
-    if (!(p = lock_user(VERIFY_READ, buf, count, 1)))
+    if (!(p = lock_user(VERIFY_READ, buf, count, 1))) {
+#ifdef AFL
+        possibly_controlled_buf = 1;
+#endif
+        if (report_bad_args)
+            raise(SIGSEGV);
+
         return TARGET_EFAULT;
+    }
     if (count < 0) /* The kernel does this in rw_verify_area, if I understand correctly */
         return TARGET_EINVAL;
 
@@ -575,6 +862,8 @@ static abi_long do_random(abi_ulong buf, abi_long count, abi_ulong p_rnd_out)
     for (i = 0; i < count; i += sizeof(randval)) {
         _Static_assert(RAND_MAX >= INT16_MAX, "I rely on RAND_MAX giving at least 16 random bits");
         randval = 0x4141;
+        if (seed_passed)
+            randval = rand() & 0xFFFFu;
         size = ((count - i) < sizeof(randval)) ? (count - i) : sizeof(randval);
         if (size == 1) {
             ret = put_user_u8((uint8_t) randval, buf + i);
@@ -601,6 +890,9 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
     abi_ulong *p;
     abi_long ret;
 
+    if (len == 0) // ABI-specified, vagrant returns this before EFAULT
+        return TARGET_EINVAL;
+
     if (exec)
         prot |= PROT_EXEC;
 
@@ -610,13 +902,23 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
     } else p = NULL; /* Believe it or not, binfmt_cgc allows this */
 
     ret = 0;
-
+    abi_ulong chosen = 0;
+    abi_ulong sinkhole_chosen = 0;
     abi_ulong aligned_len = ((len + 0xfff) / 0x1000) * 0x1000;
-    abi_ulong mmap_ret = target_mmap((abi_ulong)0, aligned_len, prot, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+
+    /* check sinkholes */
+    chosen = sinkhole_chosen = get_max_sinkhole(aligned_len);
+    if (!chosen)
+        chosen = mmap_next_start - aligned_len;
+
+    abi_ulong mmap_ret = target_mmap((abi_ulong)chosen, aligned_len, prot, MAP_ANONYMOUS | MAP_PRIVATE| MAP_FIXED, -1, 0);
     if (mmap_ret == -1)
         return get_errno(mmap_ret);
     if (mmap_ret == 0)
         return host_to_target_errno(errno);
+
+    if (!sinkhole_chosen)
+        mmap_next_start = chosen;
 
     if (p != NULL) {
         __put_user(mmap_ret, p);
@@ -629,12 +931,42 @@ static abi_long do_allocate(abi_ulong len, abi_ulong exec, abi_ulong p_addr)
 static abi_long do_deallocate(abi_ulong start, abi_ulong len)
 {
     abi_long ret;
-
     abi_ulong aligned_len = ((len + 0xfff) / 0x1000) * 0x1000;
+    abi_ulong allowed_length = 0;
+
+    // ABI-specified: EINVAL on misaligned || len == 0
+    if (((start % 4096) != 0) || (len == 0))
+        return TARGET_EINVAL;
+    if ((start + aligned_len) > reserved_va) // TODO: "outside the valid address range"...
+        return TARGET_EINVAL;
+
+    // HACK! check to see if the page is mapped, if not deallocate fails
+    while ((lock_user(VERIFY_WRITE, start, allowed_length + 0x1000, 0)) && allowed_length < aligned_len) {
+        allowed_length += 0x1000;
+    }
+
+    if (allowed_length == 0) {
+        return 0; // Apparently that's what the ABI does
+    }
+
+    aligned_len = allowed_length;
+
+    // No deallocating the flag page! (check from binfmt_cgc.c)
+    if (!((start + aligned_len) <= 0x4347c000 || start >= (0x4347c000 + 4096)))
+        return TARGET_EINVAL;
+
     ret = target_munmap(start, aligned_len);
 
     /* target_munmap returns either 0 or the errno * -1 */
-    return ret < 0 ? host_to_target_errno(ret * -1) : ret;
+    if (ret < 0)
+        return host_to_target_errno(ret * -1);
+
+    if (start == mmap_next_start)
+        mmap_next_start += aligned_len;
+    else /* add a sinkhole */
+        add_sinkhole(start, aligned_len);
+    
+    return ret;
 }
 
 #define USEC_PER_SEC 1000000L
@@ -717,7 +1049,11 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
     switch(num) {
     case TARGET_NR_receive:
         if (!ran_forkserver_setup) do_forkserver_setup(cpu_env);
+#if defined(TRACER) || defined(AFL)
+        ret = do_receive(cpu_env, arg1, arg2, arg3, arg4);
+#else
         ret = do_receive(arg1, arg2, arg3, arg4);
+#endif
         break;
     case TARGET_NR_transmit:
         if (!ran_forkserver_setup) do_forkserver_setup(cpu_env);

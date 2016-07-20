@@ -38,6 +38,8 @@
 
 char *exec_path;
 
+int bitflip;
+
 int multicb_i = -1;       // Running CB multicb_i ...
 int multicb_count = -1;   //     ... of multicb_count
 
@@ -51,6 +53,7 @@ unsigned long mmap_min_addr;
 #if defined(CONFIG_USE_GUEST_BASE)
 unsigned long guest_base;
 int have_guest_base;
+int seed_passed = 0;
 #if (TARGET_LONG_BITS == 32) && (HOST_LONG_BITS == 64)
 /*
  * When running 32-on-64 we should make sure we can fit all of the possible
@@ -64,6 +67,15 @@ int have_guest_base;
 #error 32-on-64 only
 #endif
 #endif
+
+#define CGC_IDT_BASE 0x1000
+
+#ifdef TRACER
+extern char *predump_file;
+#endif
+extern int enabled_double_empty_exiting;
+extern int report_bad_args;
+extern FILE *receive_count_fp;
 
 static void usage(void);
 
@@ -385,7 +397,7 @@ void cpu_loop(CPUX86State *env)
             pc = env->segs[R_CS].base + env->eip;
             fprintf(stderr, "qemu: 0x%08lx: unhandled CPU exception 0x%x - aborting\n",
                     (long)pc, trapnr);
-            errx(-34, "Unhandled CPU execption (see above)");
+            exit(-34);
         }
         process_pending_signals(env);
     }
@@ -475,6 +487,9 @@ static void handle_arg_randseed(const char *arg)
         fprintf(stderr, "Invalid seed number: %s\n", arg);
         exit(1);
     }
+
+    seed_passed = 1;
+
     srand(seed);
 }
 
@@ -505,12 +520,90 @@ static void handle_arg_version(const char *arg)
 {
     printf("qemu-" TARGET_NAME " version " QEMU_VERSION QEMU_PKGVERSION
            ", Copyright (c) 2003-2008 Fabrice Bellard\nSHELLPHISH MODDED FOR CGC, ASK Nick or Jacopo\n");
+
+#ifdef TRACER
+    printf("Configured with -DTRACER\n");
+#endif
+#ifdef AFL
+    printf("Configured with -DAFL\n");
+#endif
+#if !defined(TRACER) && !defined(AFL)
+    printf("[base config version]\n");
+#endif
+#ifdef ENFORCE_NX
+    printf("[will enforce NX]\n");
+#endif
     exit(0);
+}
+
+#ifdef TRACER
+static void handle_predump(const char *arg)
+{
+        predump_file = arg;
+}
+#endif
+
+static void handle_memory_limit(const char *arg)
+{
+    struct rlimit r;
+    unsigned long long mem_limit;
+    char suffix;
+
+    /* stripped from AFL */
+    if (sscanf(arg, "%llu%c", &mem_limit, &suffix) < 1) {
+        printf("bad syntax used for -m\n");
+        exit(1);
+    }
+
+    switch (suffix) {
+        case 'T': mem_limit *= 1024 * 1024; break;
+        case 'G': mem_limit *= 1024; break;
+        case 'k': mem_limit /= 1024; break;
+        case 'M': break;
+
+        default: printf("Unsupported suffix\n"); exit(1);
+    }
+
+    r.rlim_max = r.rlim_cur = mem_limit << 20;
+
+    setrlimit(RLIMIT_AS, &r);
+
+}
+
+static void handle_report_bad_args(const char *arg)
+{
+    report_bad_args = 1;
+}
+
+static void handle_receive_count(const char *arg)
+{
+        receive_count_fp = fopen(arg, "wb");
+        if (!receive_count_fp) {
+            printf("failed to open receive_count file\n");
+            exit(1);
+        }
+
+        setvbuf(receive_count_fp, NULL, _IOLBF, 0);
+}
+
+static void handle_enable_double_empty_exiting(const char *arg)
+{
+    enabled_double_empty_exiting = 1;
 }
 
 static void handle_arg_magicdump(const char *arg)
 {
     magicdump_filename = strdup(arg);
+}
+
+static void handle_arg_magicpregen(const char *arg)
+{
+    magicpregen_filename = strdup(arg);
+}
+
+static void handle_arg_bitflip(const char *arg)
+{
+    bitflip = 1;
 }
 
 static void handle_arg_multicb_i(const char *arg)
@@ -561,10 +654,26 @@ static const struct qemu_argument arg_table[] = {
      "",           "log system calls"},
     {"seed",       "QEMU_RAND_SEED",   true,  handle_arg_randseed,
      "",           "Seed for pseudo-random number generator"},
+#ifdef TRACER
+    {"predump",    "",                 true,  handle_predump,
+     "",           "File to dump state to at the point symbolic data is about to enter the program"},
+#endif
+    {"m",          "",                 true,  handle_memory_limit,
+     "", "Set an upper limit on memory"},
+    {"report_bad_args",          "",   false, handle_report_bad_args,
+     "", "Report potentially dangerous arguments passed to receive and transmit (with a SIGSEGV)"},
+    {"receive_count",    "",           true,  handle_receive_count,
+     "",           "File to dump receive counting to"},
+    {"enable_double_empty_exiting",    "",           false,  handle_enable_double_empty_exiting,
+     "",           "Enable the double empty exiting strategy"},
     {"version",    "QEMU_VERSION",     false, handle_arg_version,
      "",           "display version information and exit"},
     {"magicdump",  "QEMU_MAGICDUMP",   true, handle_arg_magicdump,
      "",           "dump CGC magic page contents to file"},
+    {"bitflip",    "QEMU_BITFLIP",    false, handle_arg_bitflip,
+     "",           "XOR with 0xFF every byte gotten via receive"},
+    {"magicpregen","QEMU_MAGICPREGEN", true, handle_arg_magicpregen,
+     "",           "read the flag page content from this file"},
     {"multicb_i",  "QEMU_MULTICB_I",  true, handle_arg_multicb_i,
      "",           "For multi-CB challenges: which one (0-based)"},
     {"multicb_count",  "QEMU_MULTICB_COUNT",  true, handle_arg_multicb_count,
@@ -739,7 +848,11 @@ int main(int argc, char **argv, char **envp)
     cpudef_setup(); /* parse cpu definitions in target config file (TBD) */
 #endif
 
-    /* we want rand to be consistent across runs */
+#if defined(TRACER) || defined(AFL)
+    enabled_double_empty_exiting = 1;
+#endif
+
+    /* we want rand to be consistent across runs (when the seed is not specified) */
     srand(0);
 
     optind = parse_args(argc, argv);
@@ -916,7 +1029,7 @@ int main(int argc, char **argv, char **envp)
 #else
     env->idt.limit = 255;
 #endif
-    env->idt.base = target_mmap(0, sizeof(uint64_t) * (env->idt.limit + 1),
+    env->idt.base = target_mmap(CGC_IDT_BASE, sizeof(uint64_t) * (env->idt.limit + 1),
                                 PROT_READ|PROT_WRITE,
                                 MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
     idt_table = g2h(env->idt.base);
@@ -945,7 +1058,8 @@ int main(int argc, char **argv, char **envp)
     /* linux segment setup */
     {
         uint64_t *gdt_table;
-        env->gdt.base = target_mmap(0, sizeof(uint64_t) * TARGET_GDT_ENTRIES,
+        unsigned int gdt_base = ((((CGC_IDT_BASE + sizeof(uint64_t) * (env->idt.limit + 1)) / 0x1000) + 1) * 0x1000);
+        env->gdt.base = target_mmap(gdt_base, sizeof(uint64_t) * TARGET_GDT_ENTRIES,
                                     PROT_READ|PROT_WRITE,
                                     MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
         env->gdt.limit = sizeof(uint64_t) * TARGET_GDT_ENTRIES - 1;
@@ -992,7 +1106,7 @@ int main(int argc, char **argv, char **envp)
           - IDT / GDT / etc. (kept at qemu's default of going right before the kernel break == reserved_va)
           - allocate() --> CHANGING IT HERE <--
     */
-    mmap_next_start = 0xb7fff000;
+    mmap_next_start = 0xb8000000;
     // NOTE: DO NOT CHANGE reserved_va, otherwise self-modifying code detection will break! [J]
 
     /* Final check against the official https://github.com/CyberGrandChallenge/libcgc/blob/master/cgcabi.md */

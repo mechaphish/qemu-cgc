@@ -8,12 +8,13 @@
 #include <sys/mman.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <err.h>
 
 #include "qemu.h"
 
 #define NGROUPS 32
 
-char *magicdump_filename = NULL;
+char *magicdump_filename = NULL, *magicpregen_filename = NULL;
 
 /* ??? This should really be somewhere else.  */
 abi_long memcpy_to_target(abi_ulong dest, const void *src,
@@ -167,33 +168,46 @@ int loader_exec(int fdexec, const char *filename, char **argv, char **envp,
             exit(-1);
         }
 
-        if (magicdump_filename != NULL)
-        {
-            magic_fd = open(magicdump_filename, O_WRONLY|O_CREAT, 0666);
-            if (magic_fd < 0)
-                fprintf(stderr, "failed to open file %s for magicdump: %s",
-                        magicdump_filename,
-                        strerror(errno));
-        }
-
-        for(i=0; i < TARGET_PAGE_SIZE / sizeof(abi_ulong); i++)
-        {
-            temp_rand = rand();
-            memcpy_to_target(CGC_MAGIC_PAGE_ADDR+(i*sizeof(abi_ulong)),
-                             &temp_rand, sizeof(abi_ulong));
-            if (!(magic_fd < 0))
+        if (magicpregen_filename == NULL) {
+            if (magicdump_filename != NULL)
             {
-                if (write(magic_fd, &temp_rand, sizeof(abi_ulong)) != sizeof(abi_ulong))
+                magic_fd = open(magicdump_filename, O_WRONLY|O_CREAT, 0666);
+                if (magic_fd < 0)
+                    fprintf(stderr, "failed to open file %s for magicdump: %s",
+                            magicdump_filename,
+                            strerror(errno));
+            }
+            for(i=0; i < TARGET_PAGE_SIZE / sizeof(abi_ulong); i++)
+            {
+                temp_rand = rand();
+                memcpy_to_target(CGC_MAGIC_PAGE_ADDR+(i*sizeof(abi_ulong)),
+                                 &temp_rand, sizeof(abi_ulong));
+                if (!(magic_fd < 0))
                 {
-                    fprintf(stderr, "error writing to magicdump file %s", strerror(errno));
-                    return -1;
+                    if (write(magic_fd, &temp_rand, sizeof(abi_ulong)) != sizeof(abi_ulong))
+                    {
+                        fprintf(stderr, "error writing to magicdump file %s", strerror(errno));
+                        return -1;
+                    }
                 }
                 // TODO: Confirm with Nick that it can be closed. dup2 to a high number otherwise.
                 close(magic_fd);
             }
+        } else {
+            int magicpregen_fd = open(magicpregen_filename, O_RDONLY);
+            if (magicpregen_fd < 0)
+                err(2,"Couldn't open the flag page content file");
+            for (i = 0; i < 4096; i++) {
+                unsigned char c;
+                if (read(magicpregen_fd, &c, 1) != 1)
+                    err(3,"Couldn't read from the flag page content file");
+                memcpy_to_target(CGC_MAGIC_PAGE_ADDR+i, &c, 1);
+            }
+            close(magicpregen_fd);
         }
 
         target_mprotect(CGC_MAGIC_PAGE_ADDR, TARGET_PAGE_SIZE, PROT_READ);
+        close(magic_fd);
     }
 
     if(retval>=0) {
