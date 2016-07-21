@@ -2,4 +2,4 @@
 
 # Like what AFL does, but without -Werror
 
-CFLAGS="-O3" ./configure --disable-system --enable-linux-user --enable-guest-base --disable-gtk --disable-sdl --disable-vnc --target-list=i386-linux-user --disable-werror --extra-cflags='-DAFL'
+CFLAGS="-O3" ./configure --disable-system --enable-linux-user --enable-guest-base --disable-gtk --disable-sdl --disable-vnc --target-list=i386-linux-user --disable-werror --extra-cflags='-DAFL -DDOUBLE_EMPTY_EXIT_BY_DEFAULT'

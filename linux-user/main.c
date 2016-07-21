@@ -1,3 +1,7 @@
+#ifndef AFL
+# error Can only compile me for AFL use! Use run_via_fakeforksrv to run me directly.
+#endif
+
 /*
  *  qemu user main
  *
@@ -526,6 +530,10 @@ static void handle_arg_version(const char *arg)
     printf("* See run_via_fakeforksrv         *\n");
     printf("***********************************\n");
 
+#ifdef DOUBLE_EMPTY_EXIT_BY_DEFAULT 
+    printf("Will auto-exit on double empty receive() by default\n");
+#endif
+
 #ifdef TRACER
     printf("Configured with -DTRACER\n");
 #endif
@@ -596,10 +604,7 @@ static void handle_receive_count(const char *arg)
 
 static void handle_enable_double_empty_exiting(const char *arg)
 {
-    // TODO: multicb version
-    fprintf(stderr, "double-EOF is a TODO for multicb!\n");
-    exit(1);
-    //enabled_double_empty_exiting = 1;
+    enabled_double_empty_exiting = 1;
 }
 
 static void handle_arg_magicdump(const char *arg)
@@ -859,9 +864,8 @@ int main(int argc, char **argv, char **envp)
     cpudef_setup(); /* parse cpu definitions in target config file (TBD) */
 #endif
 
-#if defined(TRACER) || defined(AFL)
-    // TODO for multi-cb
-    //enabled_double_empty_exiting = 1;
+#ifdef DOUBLE_EMPTY_EXIT_BY_DEFAULT
+    enabled_double_empty_exiting = 1;
 #endif
 
     /* we want rand to be consistent across runs (when the seed is not specified) */

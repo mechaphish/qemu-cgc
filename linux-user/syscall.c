@@ -713,14 +713,14 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
         } else return get_errno(ret);
     }
 
-#if 0   // TODO: multi-cb double-EOF exit
-    if (enabled_double_empty_exiting) {
+    if ((fd == 0) && enabled_double_empty_exiting) {
         /* if we recv 0 two times in a row exit */
         if (ret == 0)
         {
-            if (zero_recv_hits > 0)
-                exit_group(1);
-            else
+            if (zero_recv_hits > 0) {
+                MCBDBG("Double-EOF exit heuristic! Will exit(146)");
+                exit_group(146); // Special exit code, to tell fakeforkserver
+            } else
                 zero_recv_hits++;
         }
         else
@@ -728,7 +728,6 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
             zero_recv_hits = 0;
         }
     }
-#endif
 
     assert(ret >= 0);
     if (ret > 0) {
@@ -1049,6 +1048,10 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
 #ifdef TARGET_GPROF
         _mcleanup();
 #endif
+        if (arg1 == 146) {
+            fprintf(stderr, "OUR CGC QEMU: masking away the special double-EOF exit status of 146. Will _terminate(147) instead.\n");
+            arg1 = 147;
+        }
         gdb_exit(cpu_env, arg1);
         exit(arg1);
         break;
