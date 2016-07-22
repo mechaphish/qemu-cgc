@@ -11,10 +11,12 @@
 #include <err.h>
 
 #include "qemu.h"
+#include "flag.h"
 
 #define NGROUPS 32
 
 char *magicdump_filename = NULL, *magicpregen_filename = NULL;
+extern int seed_passed;
 
 /* ??? This should really be somewhere else.  */
 abi_long memcpy_to_target(abi_ulong dest, const void *src,
@@ -156,7 +158,8 @@ int loader_exec(int fdexec, const char *filename, char **argv, char **envp,
     }
 
     if(retval>=0) {
-        abi_ulong error, temp_rand;
+        abi_ulong error;
+        unsigned char temp_rand;
 
         error = target_mmap(CGC_MAGIC_PAGE_ADDR, TARGET_PAGE_SIZE,
                             PROT_READ | PROT_WRITE,
@@ -177,14 +180,18 @@ int loader_exec(int fdexec, const char *filename, char **argv, char **envp,
                             magicdump_filename,
                             strerror(errno));
             }
-            for(i=0; i < TARGET_PAGE_SIZE / sizeof(abi_ulong); i++)
+            for(i=0; i < TARGET_PAGE_SIZE / sizeof(unsigned char); i++)
             {
-                temp_rand = rand();
-                memcpy_to_target(CGC_MAGIC_PAGE_ADDR+(i*sizeof(abi_ulong)),
-                                 &temp_rand, sizeof(abi_ulong));
+                if (seed_passed)
+                    temp_rand = (unsigned char) (rand() % 0xff);
+                else
+                    temp_rand = PRECONFIGURED_FLAG[i];
+
+                memcpy_to_target(CGC_MAGIC_PAGE_ADDR+(i*sizeof(unsigned char)),
+                                 &temp_rand, sizeof(unsigned char));
                 if (!(magic_fd < 0))
                 {
-                    if (write(magic_fd, &temp_rand, sizeof(abi_ulong)) != sizeof(abi_ulong))
+                    if (write(magic_fd, &temp_rand, sizeof(unsigned char)) != sizeof(unsigned char))
                     {
                         fprintf(stderr, "error writing to magicdump file %s", strerror(errno));
                         return -1;
