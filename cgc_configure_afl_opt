@@ -2,4 +2,6 @@
 
 # Like what AFL does, but without -Werror
 
-CFLAGS="-O3" ./configure --disable-system --enable-linux-user --enable-guest-base --disable-gtk --disable-sdl --disable-vnc --target-list=i386-linux-user --disable-werror --extra-cflags='-DAFL'
+CFLAGS="-O3" ./configure \
+    --disable-tools --disable-netmap --disable-spice --disable-curl --disable-virtfs --disable-qom-cast-debug --disable-vde --disable-libnfs --disable-libiscsi --disable-curses --disable-fdt --disable-rbd --disable-opengl --disable-lzo --disable-usb-redir --disable-xfsctl --disable-snappy --disable-bzip2 --disable-guest-agent --disable-glusterfs --disable-vte --disable-vhdx --disable-libssh2 --disable-quorum --disable-tpm --disable-smartcard-nss --disable-libusb --disable-vhost-scsi --disable-vhost-net --disable-docs --disable-zlib-test --disable-bluez --disable-brlapi --disable-kvm \
+    --disable-system --enable-linux-user --enable-guest-base --disable-gtk --disable-sdl --disable-vnc --target-list=i386-linux-user --disable-werror --extra-cflags='-DAFL'
