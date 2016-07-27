@@ -130,14 +130,41 @@ static inline void do_forkserver_setup(CPUX86State *env)
     ran_forkserver_setup = true;
 }
 
+extern int multicb_i, multicb_count;
 
 #include <ctype.h>
 #if defined(DEBUG_MULTICB) && (DEBUG_MULTICB >= 2)
-extern int multicb_i; // slight abuse
 # define MCBDBG(fmt, ...) fprintf(stderr, "[CB_%d] " fmt "\n", multicb_i, ##__VA_ARGS__)
 #else
 # define MCBDBG(fmt, ...) do { ; } while (0)
 #endif
+
+// Used to inject EOFs
+extern unsigned char *extra_shm; // TODO: bitmap?
+static inline void set_written_to_fd(int fd)
+{
+    if (fd < 3)
+        return;
+    // TODO: local cache to avoid write?
+    extra_shm[(fd-3)*multicb_count + multicb_i] = 1;
+}
+static void clear_all_fdwritebits(void)
+{
+    // This is registered atexit()
+    if (extra_shm == NULL)
+        return;
+    for (int i = 3; i < 2*multicb_count; i++)
+        extra_shm[(i-3)*multicb_count + multicb_i] = 0;
+}
+static inline bool any_writer_to_fd(int fd)
+{
+    if (fd < 3) // "Natural" EOF for those
+        return true;
+    for (int i = 0; i < multicb_count; i++)
+        if (extra_shm[(fd-3)*multicb_count + i] != 0)
+            return true;
+    return false;
+}
 
 
 #undef _syscall0
@@ -211,18 +238,6 @@ int enabled_double_empty_exiting = 0;
 
 #ifdef AFL
 int possibly_controlled_buf = 0;
-
-
-__attribute__((noreturn))
-static inline
-int exit_group(int error_code) {
-    if (possibly_controlled_buf)
-        raise(SIGSEGV);
-
-    syscall(__NR_exit_group, error_code);
-
-    __builtin_unreachable();
-}
 #endif
 
 #ifdef AFL
@@ -601,6 +616,7 @@ void print_sinkholes(void) {
 
 void syscall_init(void)
 {
+    atexit(&clear_all_fdwritebits);
 }
 
 
@@ -648,7 +664,7 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
         if (predump_file)
         {
             do_predump(predump_file, env);
-            exit_group(0);
+            exit(0);
         }
 #endif
         first_recv_hit = true;
@@ -684,12 +700,36 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
         return TARGET_EINVAL;
 
     if (count != 0) {
-        do {
-            //MCBDBG("  ACT read(fd=%d, count=%d)", fd, count);
-            //errno = 0;
-            ret = read(fd, p, count);
-            //MCBDBG("  ART read(fd=%d, count=%d) = %d (errno = %d, %s)", fd, count, ret, errno, strerror(errno));
-        } while ((ret == -1) && (errno == EINTR));
+        bool do_actual_read = true;
+        if (!any_writer_to_fd(fd)) {
+            // Impose a timeout, if there are no known writers to this fd
+            struct timeval timeout = { .tv_sec = 1 };
+            fd_set rfds; FD_ZERO(&rfds); FD_SET(fd, &rfds);
+            fd_set efds; FD_ZERO(&efds); FD_SET(fd, &efds);
+            int selret;
+            do {
+                selret = select(fd+1, &rfds, NULL, &efds, &timeout);
+            } while ((selret == -1) && (errno == EINTR));
+            if (selret == -1) {
+                perror("OUR QEMU/CGC FAILED select() for multi-cb EOF injection");
+                exit(73);
+            }
+            if (selret == 0) {
+                // TIMEOUT => FAKE AN EOF
+                do_actual_read = false;
+                ret = 0; // Fake a return of 0
+            } // Otherwise, something happened on the fd (ready or errored out) => proceed
+        }
+
+        // Regular (blocking) read()
+        if (do_actual_read)
+            do {
+                //MCBDBG("  ACT read(fd=%d, count=%d)", fd, count);
+                //errno = 0;
+                ret = read(fd, p, count);
+                //MCBDBG("  ART read(fd=%d, count=%d) = %d (errno = %d, %s)", fd, count, ret, errno, strerror(errno));
+            } while ((ret == -1) && (errno == EINTR));
+
         if (ret >= 0) {
             if (bitflip) {
                 int i;
@@ -719,7 +759,7 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
         {
             if (zero_recv_hits > 0) {
                 MCBDBG("Double-EOF exit heuristic! Will exit(146)");
-                exit_group(146); // Special exit code, to tell fakeforkserver
+                exit(146); // Special exit code, to tell fakeforkserver
             } else
                 zero_recv_hits++;
         }
@@ -777,6 +817,9 @@ static abi_long do_transmit(abi_long fd, abi_ulong buf, abi_long count, abi_ulon
     }
     if (count < 0) /* The kernel does this in rw_verify_area, if I understand correctly */
         return TARGET_EINVAL;
+
+    if (fd >= 3)
+        set_written_to_fd(fd);
 
     if (count != 0) {
         do {
