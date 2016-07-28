@@ -156,7 +156,7 @@ static void clear_all_fdwritebits(void)
     for (int i = 3; i < 2*multicb_count; i++)
         extra_shm[(i-3)*multicb_count + multicb_i] = 0;
 }
-static inline bool any_writer_to_fd(int fd)
+static inline bool any_known_writer_to_fd(int fd)
 {
     if (fd < 3) // "Natural" EOF for those
         return true;
@@ -700,35 +700,52 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
         return TARGET_EINVAL;
 
     if (count != 0) {
-        bool do_actual_read = true;
-        if (!any_writer_to_fd(fd)) {
-            // Impose a timeout, if there are no known writers to this fd
-            struct timeval timeout = { .tv_sec = 1 };
-            fd_set rfds; FD_ZERO(&rfds); FD_SET(fd, &rfds);
-            fd_set efds; FD_ZERO(&efds); FD_SET(fd, &efds);
-            int selret;
-            do {
-                selret = select(fd+1, &rfds, NULL, &efds, &timeout);
-            } while ((selret == -1) && (errno == EINTR));
-            if (selret == -1) {
-                perror("OUR QEMU/CGC FAILED select() for multi-cb EOF injection");
-                exit(73);
-            }
-            if (selret == 0) {
-                // TIMEOUT => FAKE AN EOF
-                do_actual_read = false;
-                ret = 0; // Fake a return of 0
-            } // Otherwise, something happened on the fd (ready or errored out) => proceed
-        }
+        while (true) {
+            int selret = 1; // return value from select()
+                            // 1 = ready to read(), 0 = timeout
 
-        // Regular (blocking) read()
-        if (do_actual_read)
+            if (fd >= 3) {
+                // Impose a timeout, if there are no known writers to this IPC fd
+                // (Note that stdin/stdout/stderr are excluded.)
+                struct timeval timeout = { .tv_sec = 1 };
+                fd_set rfds; FD_ZERO(&rfds); FD_SET(fd, &rfds);
+                fd_set efds; FD_ZERO(&efds); FD_SET(fd, &efds);
+                do {
+                    MCBDBG("  ACT select for receive(fd=%d)", fd);
+                    errno = 0;
+                    selret = select(fd+1, &rfds, NULL, &efds, &timeout);
+                    MCBDBG("  ART select for receive(fd=%d) = %d (errno = %d, %s)", fd, selret, errno, strerror(errno));
+                } while ((selret == -1) && (errno == EINTR));
+            }
+
+            if (selret == -1) {
+                if (errno == EBADF) {
+                    ret = -1; // Pass the error on to the CB
+                    break;
+                } else {
+                    perror("INTERNAL ERROR of select() for multi-cb EOF injection");
+                    exit(73);
+                }
+            }
+
+            if (selret == 0) {
+                MCBDBG("EOF-injector timeout! (fd = %d)", fd);
+                if (any_known_writer_to_fd(fd))
+                    continue; // a) TIMEOUT but there are known writers => keep going (but still don't block)
+                MCBDBG("No known writers, will fake an EOF (fd = %d)", fd);
+                ret = 0;
+                break; // b) TIMEOUT and no known writers => FAKE AN EOF
+            }
+
+            // c) There is data (or an error) => regular (blocking) read()
             do {
-                //MCBDBG("  ACT read(fd=%d, count=%d)", fd, count);
-                //errno = 0;
+                MCBDBG("  ACT read(fd=%d, count=%d)", fd, count);
+                errno = 0;
                 ret = read(fd, p, count);
-                //MCBDBG("  ART read(fd=%d, count=%d) = %d (errno = %d, %s)", fd, count, ret, errno, strerror(errno));
+                MCBDBG("  ART read(fd=%d, count=%d) = %d (errno = %d, %s)", fd, count, ret, errno, strerror(errno));
             } while ((ret == -1) && (errno == EINTR));
+            break;
+        }
 
         if (ret >= 0) {
             if (bitflip) {
