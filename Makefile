@@ -307,6 +307,7 @@ clean:
 	if test -d $$d; then $(MAKE) -C $$d $@ || exit 1; fi; \
 	rm -f $$d/qemu-options.def; \
         done
+	-rm -f ../../multicb-qemu
 
 VERSION ?= $(shell cat VERSION)
 
