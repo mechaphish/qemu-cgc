@@ -151,16 +151,18 @@ static inline void set_written_to_fd(int fd)
 static void clear_all_fdwritebits(void)
 {
     // This is registered atexit()
+    int i;
     if (extra_shm == NULL)
         return;
-    for (int i = 3; i < 2*multicb_count; i++)
+    for (i = 3; i < 2*multicb_count; i++)
         extra_shm[(i-3)*multicb_count + multicb_i] = 0;
 }
 static inline bool any_known_writer_to_fd(int fd)
 {
+    int i;
     if (fd < 3) // "Natural" EOF for those
         return true;
-    for (int i = 0; i < multicb_count; i++)
+    for (i = 0; i < multicb_count; i++)
         if (extra_shm[(fd-3)*multicb_count + i] != 0)
             return true;
     return false;
