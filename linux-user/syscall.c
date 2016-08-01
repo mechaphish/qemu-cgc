@@ -707,7 +707,7 @@ static abi_long do_receive(abi_long fd, abi_ulong buf, abi_long count, abi_ulong
             if (fd >= 3) {
                 // Impose a timeout, if there are no known writers to this IPC fd
                 // (Note that stdin/stdout/stderr are excluded.)
-                struct timeval timeout = { .tv_sec = 1 };
+                struct timeval timeout = { .tv_usec = 300*1000 };
                 fd_set rfds; FD_ZERO(&rfds); FD_SET(fd, &rfds);
                 fd_set efds; FD_ZERO(&efds); FD_SET(fd, &efds);
                 do {
