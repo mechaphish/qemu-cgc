@@ -28,6 +28,7 @@
 #include "exec/exec-all.h"           /* MAX_OPC_PARAM_IARGS */
 #include "exec/cpu_ldst.h"
 #include "tcg-op.h"
+#include "librarymap.h"
 
 /* Marker for missing code. */
 #define TODO() \
@@ -419,6 +420,270 @@ static bool tci_compare64(uint64_t u0, uint64_t u1, TCGCond condition)
     return result;
 }
 
+
+// if it's not softmmu, assume it's user
+#ifndef CONFIG_SOFTMMU
+#define QEMU_USER
+#endif
+
+#define QIRA_TRACKING
+
+#ifdef QIRA_TRACKING
+
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/file.h>
+
+#ifdef QEMU_USER
+#include "qemu.h"
+#endif
+
+#define QIRA_DEBUG(...) {}
+//#define QIRA_DEBUG qemu_debug
+//#define QIRA_DEBUG printf
+
+// struct storing change data
+struct change {
+  uint64_t address;
+  uint64_t data;
+  uint32_t changelist_number;
+  uint32_t flags;
+};
+
+// prototypes
+void init_QIRA(CPUArchState *env, int id);
+struct change *add_change(target_ulong addr, uint64_t data, uint32_t flags);
+void track_load(target_ulong a, uint64_t data, int size);
+void track_store(target_ulong a, uint64_t data, int size);
+void track_read(target_ulong base, target_ulong offset, target_ulong data, int size);
+void track_write(target_ulong base, target_ulong offset, target_ulong data, int size);
+void add_pending_change(target_ulong addr, uint64_t data, uint32_t flags);
+void commit_pending_changes(void);
+void resize_change_buffer(size_t size);
+
+// defined in qemu.h
+//void track_kernel_read(void *host_addr, target_ulong guest_addr, long len);
+//void track_kernel_write(void *host_addr, target_ulong guest_addr, long len);
+
+#define IS_VALID      0x80000000
+#define IS_WRITE      0x40000000
+#define IS_MEM        0x20000000
+#define IS_START      0x10000000
+#define IS_SYSCALL    0x08000000
+#define SIZE_MASK 0xFF
+
+#define FAKE_SYSCALL_LOADSEG 0x10001
+
+int GLOBAL_QIRA_did_init = 0;
+CPUArchState *GLOBAL_CPUArchState;
+struct change *GLOBAL_change_buffer;
+
+uint32_t GLOBAL_qira_log_fd;
+size_t GLOBAL_change_size;
+
+// current state that must survive forks
+struct logstate {
+  uint32_t change_count;
+  uint32_t changelist_number;
+  uint32_t is_filtered;
+  uint32_t first_changelist_number;
+  int parent_id;
+  int this_pid;
+};
+struct logstate *GLOBAL_logstate;
+
+// input args
+uint32_t GLOBAL_start_clnum = 1;
+int GLOBAL_parent_id = -1, GLOBAL_id = -1;
+
+int GLOBAL_tracelibraries = 0;
+uint64_t GLOBAL_gatetrace = 0;
+
+#define OPEN_GLOBAL_ASM_FILE { if (unlikely(GLOBAL_asm_file == NULL)) { GLOBAL_asm_file = fopen("/tmp/qira_asm", "a"); } }
+FILE *GLOBAL_asm_file = NULL;
+FILE *GLOBAL_strace_file = NULL;
+
+// should be 0ed on startup
+#define PENDING_CHANGES_MAX_ADDR 0x100
+struct change GLOBAL_pending_changes[PENDING_CHANGES_MAX_ADDR/4];
+
+uint32_t get_current_clnum(void);
+uint32_t get_current_clnum(void) {
+  return GLOBAL_logstate->changelist_number;
+}
+
+void resize_change_buffer(size_t size) {
+  if(ftruncate(GLOBAL_qira_log_fd, size)) {
+    perror("ftruncate");
+  }
+  GLOBAL_change_buffer = mmap(NULL, size,
+         PROT_READ | PROT_WRITE, MAP_SHARED, GLOBAL_qira_log_fd, 0);
+  GLOBAL_logstate = (struct logstate *)GLOBAL_change_buffer;
+  if (GLOBAL_change_buffer == NULL) QIRA_DEBUG("MMAP FAILED!\n");
+}
+
+void init_QIRA(CPUArchState *env, int id) {
+  QIRA_DEBUG("init QIRA called\n");
+  GLOBAL_QIRA_did_init = 1;
+  GLOBAL_CPUArchState = env;   // unused
+
+  OPEN_GLOBAL_ASM_FILE
+
+  char fn[PATH_MAX];
+  sprintf(fn, "/tmp/qira_logs/%d_strace", id);
+  GLOBAL_strace_file = fopen(fn, "w");
+
+  sprintf(fn, "/tmp/qira_logs/%d", id);
+
+  // unlink it first
+  unlink(fn);
+  GLOBAL_qira_log_fd = open(fn, O_RDWR | O_CREAT, 0644);
+  GLOBAL_change_size = 1;
+  memset(GLOBAL_pending_changes, 0, (PENDING_CHANGES_MAX_ADDR/4) * sizeof(struct change));
+
+  resize_change_buffer(GLOBAL_change_size * sizeof(struct change));
+  memset(GLOBAL_change_buffer, 0, sizeof(struct change));
+
+  // skip the first change
+  GLOBAL_logstate->change_count = 1;
+  GLOBAL_logstate->is_filtered = 0;
+  GLOBAL_logstate->this_pid = getpid();
+
+  // do this after init_QIRA
+  GLOBAL_logstate->changelist_number = GLOBAL_start_clnum-1;
+  GLOBAL_logstate->first_changelist_number = GLOBAL_start_clnum;
+  GLOBAL_logstate->parent_id = GLOBAL_parent_id;
+
+  // use all fds up to 30
+  int i;
+  int dupme = open("/dev/null", O_RDONLY);
+  struct stat useless;
+  for (i = 0; i < 30; i++) {
+    sprintf(fn, "/proc/self/fd/%d", i);
+    if (stat(fn, &useless) == -1) {
+      //printf("dup2 %d %d\n", dupme, i);
+      dup2(dupme, i);
+    }
+  }
+
+  if (GLOBAL_librarymap == NULL){
+      init_librarymap();
+  }
+
+  // no more opens can happen here in QEMU, only the target process
+}
+
+struct change *add_change(target_ulong addr, uint64_t data, uint32_t flags) {
+  size_t cc = __sync_fetch_and_add(&GLOBAL_logstate->change_count, 1);
+
+  if (cc == GLOBAL_change_size) {
+    // double the buffer size
+    QIRA_DEBUG("doubling buffer with size %d\n", GLOBAL_change_size);
+    resize_change_buffer(GLOBAL_change_size * sizeof(struct change) * 2);
+    GLOBAL_change_size *= 2;
+  }
+  struct change *this_change = GLOBAL_change_buffer + cc;
+  this_change->address = (uint64_t)addr;
+  this_change->data = data;
+  this_change->changelist_number = GLOBAL_logstate->changelist_number;
+  this_change->flags = IS_VALID | flags;
+  return this_change;
+}
+
+void add_pending_change(target_ulong addr, uint64_t data, uint32_t flags) {
+  if (addr < PENDING_CHANGES_MAX_ADDR) {
+    GLOBAL_pending_changes[addr/4].address = (uint64_t)addr;
+    GLOBAL_pending_changes[addr/4].data = data;
+    GLOBAL_pending_changes[addr/4].flags = IS_VALID | flags;
+  }
+}
+
+void commit_pending_changes(void) {
+  int i;
+  for (i = 0; i < PENDING_CHANGES_MAX_ADDR/4; i++) {
+    struct change *c = &GLOBAL_pending_changes[i];
+    if (c->flags & IS_VALID) add_change(c->address, c->data, c->flags);
+  }
+  memset(GLOBAL_pending_changes, 0, (PENDING_CHANGES_MAX_ADDR/4) * sizeof(struct change));
+}
+
+struct change *track_syscall_begin(void *env, target_ulong sysnr);
+struct change *track_syscall_begin(void *env, target_ulong sysnr) {
+  int i;
+  QIRA_DEBUG("syscall: %d\n", sysnr);
+  if (GLOBAL_logstate->is_filtered == 1) {
+    for (i = 0; i < 0x20; i+=4) {
+      add_change(i, *(target_ulong*)(env+i), IS_WRITE | (sizeof(target_ulong)*8));
+    }
+  }
+  return add_change(sysnr, 0, IS_SYSCALL);
+}
+
+
+// all loads and store happen in libraries...
+void track_load(target_ulong addr, uint64_t data, int size) {
+  QIRA_DEBUG("load:  0x%x:%d\n", addr, size);
+  add_change(addr, data, IS_MEM | size);
+}
+
+void track_store(target_ulong addr, uint64_t data, int size) {
+  QIRA_DEBUG("store: 0x%x:%d = 0x%lX\n", addr, size, data);
+  add_change(addr, data, IS_MEM | IS_WRITE | size);
+}
+
+void track_read(target_ulong base, target_ulong offset, target_ulong data, int size) {
+  QIRA_DEBUG("read:  %x+%x:%d = %x\n", base, offset, size, data);
+  if ((int)offset < 0) return;
+  if (GLOBAL_logstate->is_filtered == 0) add_change(offset, data, size);
+}
+
+void track_write(target_ulong base, target_ulong offset, target_ulong data, int size) {
+  QIRA_DEBUG("write: %x+%x:%d = %x\n", base, offset, size, data);
+  if ((int)offset < 0) return;
+  if (GLOBAL_logstate->is_filtered == 0) add_change(offset, data, IS_WRITE | size);
+  else add_pending_change(offset, data, IS_WRITE | size);
+  //else add_change(offset, data, IS_WRITE | size);
+}
+
+#ifdef QEMU_USER
+
+void track_kernel_read(void *host_addr, target_ulong guest_addr, long len) {
+  if (unlikely(GLOBAL_QIRA_did_init == 0)) return;
+
+  // this is generating tons of changes, and maybe not too useful
+  /*QIRA_DEBUG("kernel_read: %p %X %ld\n", host_addr, guest_addr, len);
+  long i = 0;
+  //for (; i < len; i+=4) add_change(guest_addr+i, ((unsigned int*)host_addr)[i], IS_MEM | 32);
+  for (; i < len; i+=1) add_change(guest_addr+i, ((unsigned char*)host_addr)[i], IS_MEM | 8);*/
+}
+
+void track_kernel_write(void *host_addr, target_ulong guest_addr, long len) {
+  if (unlikely(GLOBAL_QIRA_did_init == 0)) return;
+  // clamp at 0x40, badness
+  //if (len > 0x40) len = 0x40;
+
+  QIRA_DEBUG("kernel_write: %p %X %ld\n", host_addr, guest_addr, len);
+  long i = 0;
+  //for (; i < len; i+=4) add_change(guest_addr+i, ((unsigned int*)host_addr)[i], IS_MEM | IS_WRITE | 32);
+  for (; i < len; i+=1) add_change(guest_addr+i, ((unsigned char*)host_addr)[i], IS_MEM | IS_WRITE | 8);
+}
+
+#endif
+
+// careful, this does it twice, MMIO?
+#define R(x,y,z) (track_load(x,(uint64_t)y,z),y)
+#define W(x,y,z) (track_store(x,(uint64_t)y,z),x)
+
+#else
+
+#define R(x,y,z) y
+#define W(x,y,z) x
+#define track_read(x,y,z) ;
+#define track_write(w,x,y,z) ;
+
+#endif
+
+
 #ifdef CONFIG_SOFTMMU
 # define mmuidx          tci_read_i(&tb_ptr)
 # define qemu_ld_ub \
@@ -450,6 +715,7 @@ static bool tci_compare64(uint64_t u0, uint64_t u1, TCGCond condition)
 # define qemu_st_beq(X) \
     helper_be_stq_mmu(env, taddr, X, mmuidx, (uintptr_t)tb_ptr)
 #else
+/*
 # define qemu_ld_ub      ldub_p(g2h(taddr))
 # define qemu_ld_leuw    lduw_le_p(g2h(taddr))
 # define qemu_ld_leul    (uint32_t)ldl_le_p(g2h(taddr))
@@ -464,11 +730,300 @@ static bool tci_compare64(uint64_t u0, uint64_t u1, TCGCond condition)
 # define qemu_st_bew(X)  stw_be_p(g2h(taddr), X)
 # define qemu_st_bel(X)  stl_be_p(g2h(taddr), X)
 # define qemu_st_beq(X)  stq_be_p(g2h(taddr), X)
+*/
+# define qemu_ld_ub      R(taddr, ldub_p(g2h(taddr)), 8)
+# define qemu_ld_leuw    R(taddr, lduw_le_p(g2h(taddr)), 16)
+# define qemu_ld_leul    R(taddr, (uint32_t)ldl_le_p(g2h(taddr)), 32)
+# define qemu_ld_leq     R(taddr, ldq_le_p(g2h(taddr)), 64)
+# define qemu_ld_beuw    R(taddr, lduw_be_p(g2h(taddr)), 16)
+# define qemu_ld_beul    R(taddr, (uint32_t)ldl_be_p(g2h(taddr)), 32)
+# define qemu_ld_beq     R(taddr, ldq_be_p(g2h(taddr)), 64)
+# define qemu_st_b(X)    stb_p(g2h(W(taddr,X,8)), X)
+# define qemu_st_lew(X)  stw_le_p(g2h(W(taddr,X,16)), X)
+# define qemu_st_lel(X)  stl_le_p(g2h(W(taddr,X,32)), X)
+# define qemu_st_leq(X)  stq_le_p(g2h(W(taddr,X,64)), X)
+# define qemu_st_bew(X)  stw_be_p(g2h(W(taddr,X,16)), X)
+# define qemu_st_bel(X)  stl_be_p(g2h(W(taddr,X,32)), X)
+# define qemu_st_beq(X)  stq_be_p(g2h(W(taddr,X,64)), X)
 #endif
+
+
+// poorly written, and it fills in holes
+int get_next_id(void);
+int get_next_id(void) {
+  char fn[PATH_MAX];
+  int this_id = 0;
+  struct stat junk;
+  while (1) {
+    sprintf(fn, "/tmp/qira_logs/%d", this_id);
+    if (stat(fn, &junk) == -1) break;
+    this_id++;
+  }
+  return this_id;
+}
+
+int run_QIRA_log_from_fd(CPUArchState *env, int qira_log_fd, uint32_t to_change);
+int run_QIRA_log_from_fd(CPUArchState *env, int qira_log_fd, uint32_t to_change) {
+  struct change pchange;
+  // skip the first change
+  lseek(qira_log_fd, sizeof(pchange), SEEK_SET);
+  int ret = 0;
+  while(1) {
+    if (read(qira_log_fd, &pchange, sizeof(pchange)) != sizeof(pchange)) { break; }
+    uint32_t flags = pchange.flags;
+    if (!(flags & IS_VALID)) break;
+    if (pchange.changelist_number >= to_change) break;
+    QIRA_DEBUG("running old change %lX %d\n", pchange.address, pchange.changelist_number);
+
+#ifdef QEMU_USER
+#ifdef R_EAX
+    if (flags & IS_SYSCALL) {
+      // replay all the syscalls?
+      // skip reads
+      if (pchange.address == FAKE_SYSCALL_LOADSEG) {
+        //printf("LOAD_SEG!\n");
+        helper_load_seg(env, pchange.data >> 32, pchange.data & 0xFFFFFFFF);
+      } else if (pchange.address != 3) {
+        env->regs[R_EAX] = do_syscall(env, env->regs[R_EAX], env->regs[R_EBX], env->regs[R_ECX], env->regs[R_EDX], env->regs[R_ESI], env->regs[R_EDI], env->regs[R_EBP], 0, 0);
+      }
+    }
+#endif
+
+    // wrong for system, we need this
+    if (flags & IS_WRITE) {
+      void *base;
+      if (flags & IS_MEM) { base = g2h(pchange.address); }
+      else { base = ((void *)env) + pchange.address; }
+      memcpy(base, &pchange.data, (flags&SIZE_MASK) >> 3);
+    }
+#endif
+    ret++;
+  }
+  return ret;
+}
+
+void run_QIRA_mods(CPUArchState *env, int this_id);
+void run_QIRA_mods(CPUArchState *env, int this_id) {
+  char fn[PATH_MAX];
+  sprintf(fn, "/tmp/qira_logs/%d_mods", this_id);
+  int qira_log_fd = open(fn, O_RDONLY);
+  if (qira_log_fd == -1) return;
+
+  // seek past the header
+  lseek(qira_log_fd, sizeof(struct logstate), SEEK_SET);
+
+  // run all the changes in this file
+  int count = run_QIRA_log_from_fd(env, qira_log_fd, 0xFFFFFFFF);
+
+  close(qira_log_fd);
+
+  printf("+++ REPLAY %d MODS DONE with entry count %d\n", this_id, count);
+}
+
+void run_QIRA_log(CPUArchState *env, int this_id, int to_change);
+void run_QIRA_log(CPUArchState *env, int this_id, int to_change) {
+  char fn[PATH_MAX];
+  sprintf(fn, "/tmp/qira_logs/%d", this_id);
+
+  int qira_log_fd, qira_log_fd_ = open(fn, O_RDONLY);
+  // qira_log_fd_ must be 30, if it isn't, i'm not sure what happened
+  dup2(qira_log_fd_, 100+this_id);
+  close(qira_log_fd_);
+  qira_log_fd = 100+this_id;
+
+  struct logstate plogstate;
+  if (read(qira_log_fd, &plogstate, sizeof(plogstate)) != sizeof(plogstate)) {
+    printf("HEADER READ ISSUE!\n");
+    return;
+  }
+
+  printf("+++ REPLAY %d START on fd %d(%d)\n", this_id, qira_log_fd, qira_log_fd_);
+
+  // check if this one has a parent and recurse here
+  // BUG: FD ISSUE!
+  QIRA_DEBUG("parent is %d with first_change %d\n", plogstate.parent_id, plogstate.first_changelist_number);
+  if (plogstate.parent_id != -1) {
+    run_QIRA_log(env, plogstate.parent_id, plogstate.first_changelist_number);
+  }
+
+  int count = run_QIRA_log_from_fd(env, qira_log_fd, to_change);
+
+  close(qira_log_fd);
+
+  printf("+++ REPLAY %d DONE to %d with entry count %d\n", this_id, to_change, count);
+}
+
+bool is_filtered_address(target_ulong pc, bool ignore_gatetrace);
+bool is_filtered_address(target_ulong pc, bool ignore_gatetrace) {
+  // to remove the warning
+  uint64_t bpc = (uint64_t)pc;
+
+  // do this check before the tracelibraries one
+  if (unlikely(GLOBAL_gatetrace) && !ignore_gatetrace) {
+    if (GLOBAL_gatetrace == bpc) GLOBAL_gatetrace = 0;
+    else return true;
+  }
+
+  // TODO(geohot): FIX THIS!, filter anything that isn't the user binary and not dynamic
+  if (unlikely(GLOBAL_tracelibraries)) {
+    return false;
+  } else {
+    return is_library_addr(pc);
+    // return ((bpc > 0x80000000 && bpc < 0xf6800000) || bpc >= 0x100000000);
+  }
+}
+
+void real_target_disas(FILE *out, CPUState *env, target_ulong code, target_ulong size, int flags);
+void target_disas(FILE *out, CPUState *env, target_ulong code, target_ulong size, int flags) {
+  OPEN_GLOBAL_ASM_FILE
+
+  if (is_filtered_address(code, true)) return;
+
+  flock(fileno(GLOBAL_asm_file), LOCK_EX);
+  real_target_disas(GLOBAL_asm_file, env, code, size, flags);
+  flock(fileno(GLOBAL_asm_file), LOCK_UN);
+
+  fflush(GLOBAL_asm_file);
+}
+
+
+int GLOBAL_last_was_syscall = 0;
+uint32_t GLOBAL_last_fork_change = -1;
+target_long last_pc = 0;
+
+void write_out_base(CPUArchState *env, int id);
+
+void write_out_base(CPUArchState *env, int id) {
+#ifdef QEMU_USER
+  CPUState *cpu = ENV_GET_CPU(env);
+  TaskState *ts = (TaskState *)cpu->opaque;
+
+  char fn[PATH_MAX];
+  char envfn[PATH_MAX];
+
+  sprintf(envfn, "/tmp/qira_logs/%d_env", id);
+  FILE *envf = fopen(envfn, "wb");
+
+  // could still be wrong, clipping on env vars
+  target_ulong ss = ts->info->start_stack;
+  target_ulong se = (ts->info->arg_end + (TARGET_PAGE_SIZE - 1)) & TARGET_PAGE_MASK;
+
+  /*while (h2g_valid(g2h(se))) {
+    printf("%x\n", g2h(se));
+    fflush(stdout);
+    se += TARGET_PAGE_SIZE;
+  }*/
+
+  //target_ulong ss = ts->info->arg_start;
+  //target_ulong se = ts->info->arg_end;
+
+  fwrite(g2h(ss), 1, se-ss, envf);
+  fclose(envf);
+
+  sprintf(fn, "/tmp/qira_logs/%d_base", id);
+  FILE *f = fopen(fn, "w");
+
+
+  // code copied from linux-user/syscall.c
+  FILE *maps = fopen("/proc/self/maps", "r");
+  char *line = NULL;
+  size_t len = 0;
+  while (getline(&line, &len, maps) != -1) {
+    int fields, dev_maj, dev_min, inode;
+    uint64_t min, max, offset;
+    char flag_r, flag_w, flag_x, flag_p;
+    char path[512] = "";
+    fields = sscanf(line, "%"PRIx64"-%"PRIx64" %c%c%c%c %"PRIx64" %x:%x %d"
+                    " %512s", &min, &max, &flag_r, &flag_w, &flag_x,
+                    &flag_p, &offset, &dev_maj, &dev_min, &inode, path);
+    if ((fields < 10) || (fields > 11)) { continue; }
+
+    if (h2g_valid(min) && h2g_valid(max) && strlen(path) && flag_w == '-') {
+      fprintf(f, TARGET_ABI_FMT_lx "-" TARGET_ABI_FMT_lx " %"PRIx64" %s\n", h2g(min), h2g(max), offset, path);
+      //printf("%p - %p -- %s", h2g(min), h2g(max), line);
+      //fflush(stdout);
+    }
+
+    /*printf("%s", line);
+    fflush(stdout);*/
+  }
+  fclose(maps);
+
+  // env
+  fprintf(f, TARGET_ABI_FMT_lx "-" TARGET_ABI_FMT_lx " %"PRIx64" %s\n", ss, se, (uint64_t)0, envfn);
+
+  fclose(f);
+#endif
+}
 
 /* Interpret pseudo code in tb. */
 uintptr_t tcg_qemu_tb_exec(CPUArchState *env, uint8_t *tb_ptr)
 {
+
+#ifdef QIRA_TRACKING
+    CPUState *cpu = ENV_GET_CPU(env);
+    TranslationBlock *tb = cpu->current_tb;
+    //TaskState *ts = (TaskState *)cpu->opaque;
+
+    if (unlikely(GLOBAL_QIRA_did_init == 0)) {
+      // get next id
+      if (GLOBAL_id == -1) { GLOBAL_id = get_next_id(); }
+
+      // these are the base libraries we load
+      write_out_base(env, GLOBAL_id);
+
+      init_QIRA(env, GLOBAL_id);
+
+      // these three arguments (parent_id, start_clnum, id) must be passed into QIRA
+      // this now runs after init_QIRA
+      if (GLOBAL_parent_id != -1) {
+        run_QIRA_log(env, GLOBAL_parent_id, GLOBAL_start_clnum);
+        run_QIRA_mods(env, GLOBAL_id);
+      }
+
+      return 0;
+    }
+
+    if (unlikely(GLOBAL_logstate->this_pid != getpid())) {
+      GLOBAL_start_clnum = GLOBAL_last_fork_change + 1;
+      GLOBAL_parent_id = GLOBAL_id;
+
+      // BUG: race condition
+      GLOBAL_id = get_next_id();
+
+      // this fixes the PID
+      init_QIRA(env, GLOBAL_id);
+    }
+
+    // set this every time, it's not in shmem
+    GLOBAL_last_fork_change = GLOBAL_logstate->changelist_number;
+
+    if (GLOBAL_last_was_syscall) {
+      #ifdef R_EAX
+        add_change((void *)&env->regs[R_EAX] - (void *)env, env->regs[R_EAX], IS_WRITE | (sizeof(target_ulong)<<3));
+      #endif
+      #ifdef TARGET_ARM
+        //first register is 0 from enum
+        add_change((void *)&env->regs[0] - (void *)env, env->regs[0], IS_WRITE | (sizeof(target_ulong)<<3));
+      #endif
+      GLOBAL_last_was_syscall = 0;
+    }
+
+    if (is_filtered_address(tb->pc, false)) {
+      GLOBAL_logstate->is_filtered = 1;
+    } else {
+      if (GLOBAL_logstate->is_filtered == 1) {
+        commit_pending_changes();
+        GLOBAL_logstate->is_filtered = 0;
+      }
+      GLOBAL_logstate->changelist_number++;
+      add_change(tb->pc, tb->size, IS_START);
+    }
+
+
+    QIRA_DEBUG("set changelist %d at %x(%d)\n", GLOBAL_logstate->changelist_number, tb->pc, tb->size);
+#endif
+
     long tcg_temps[CPU_TEMP_BUF_NLONGS];
     uintptr_t sp_value = (uintptr_t)(tcg_temps + CPU_TEMP_BUF_NLONGS);
     uintptr_t next_tb = 0;
@@ -486,6 +1041,7 @@ uintptr_t tcg_qemu_tb_exec(CPUArchState *env, uint8_t *tb_ptr)
         tcg_target_ulong t0;
         tcg_target_ulong t1;
         tcg_target_ulong t2;
+        tcg_target_ulong a0, a1, a2, a3;
         tcg_target_ulong label;
         TCGCond condition;
         target_ulong taddr;
@@ -508,11 +1064,34 @@ uintptr_t tcg_qemu_tb_exec(CPUArchState *env, uint8_t *tb_ptr)
         switch (opc) {
         case INDEX_op_call:
             t0 = tci_read_ri(&tb_ptr);
+            a0 = tci_read_reg(TCG_REG_R0);
+            a1 = tci_read_reg(TCG_REG_R1);
+            a2 = tci_read_reg(TCG_REG_R2);
+            a3 = tci_read_reg(TCG_REG_R3);
+            //printf("op_call: %X\n", t0);
+            // helper_function raise_interrupt, load_seg
+#ifdef R_EAX
+            struct change *a = NULL;
+
+            if ((void*)t0 == helper_load_seg) {
+              if (GLOBAL_logstate->is_filtered == 1) {
+                commit_pending_changes();
+              }
+              a = track_syscall_begin(env, FAKE_SYSCALL_LOADSEG);
+              a->data = a1<<32 | a2;
+              //printf("LOAD SEG %x %x %x %x\n", a0, a1, a2, a3);
+            } else if ((void*)t0 == helper_raise_interrupt) {
+              if (GLOBAL_logstate->is_filtered == 1) {
+                commit_pending_changes();
+                // syscalls always get a change?
+                /*GLOBAL_logstate->changelist_number++;
+                add_change(tb->pc, tb->size, IS_START);*/
+              }
+              a = track_syscall_begin(env, env->regs[R_EAX]);
+              GLOBAL_last_was_syscall = 1;
+            }
 #if TCG_TARGET_REG_BITS == 32
-            tmp64 = ((helper_function)t0)(tci_read_reg(TCG_REG_R0),
-                                          tci_read_reg(TCG_REG_R1),
-                                          tci_read_reg(TCG_REG_R2),
-                                          tci_read_reg(TCG_REG_R3),
+            tmp64 = ((helper_function)t0)(a0, a1, a2, a3,
                                           tci_read_reg(TCG_REG_R5),
                                           tci_read_reg(TCG_REG_R6),
                                           tci_read_reg(TCG_REG_R7),
@@ -522,10 +1101,7 @@ uintptr_t tcg_qemu_tb_exec(CPUArchState *env, uint8_t *tb_ptr)
             tci_write_reg(TCG_REG_R0, tmp64);
             tci_write_reg(TCG_REG_R1, tmp64 >> 32);
 #else
-            tmp64 = ((helper_function)t0)(tci_read_reg(TCG_REG_R0),
-                                          tci_read_reg(TCG_REG_R1),
-                                          tci_read_reg(TCG_REG_R2),
-                                          tci_read_reg(TCG_REG_R3),
+            tmp64 = ((helper_function)t0)(a0, a1, a2, a3,
                                           tci_read_reg(TCG_REG_R5));
             tci_write_reg(TCG_REG_R0, tmp64);
 #endif
@@ -576,6 +1152,7 @@ uintptr_t tcg_qemu_tb_exec(CPUArchState *env, uint8_t *tb_ptr)
             t0 = *tb_ptr++;
             t1 = tci_read_r(&tb_ptr);
             t2 = tci_read_s32(&tb_ptr);
+            track_read(t1, t2, *(uint8_t *)(t1 + t2), 32);
             tci_write_reg8(t0, *(uint8_t *)(t1 + t2));
             break;
         case INDEX_op_ld8s_i32:
@@ -589,24 +1166,28 @@ uintptr_t tcg_qemu_tb_exec(CPUArchState *env, uint8_t *tb_ptr)
             t0 = *tb_ptr++;
             t1 = tci_read_r(&tb_ptr);
             t2 = tci_read_s32(&tb_ptr);
+            track_read(t1, t2, *(uint8_t *)(t1 + t2), 32);
             tci_write_reg32(t0, *(uint32_t *)(t1 + t2));
             break;
         case INDEX_op_st8_i32:
             t0 = tci_read_r8(&tb_ptr);
             t1 = tci_read_r(&tb_ptr);
             t2 = tci_read_s32(&tb_ptr);
+            track_write(t1, t2, t0, 32);
             *(uint8_t *)(t1 + t2) = t0;
             break;
         case INDEX_op_st16_i32:
             t0 = tci_read_r16(&tb_ptr);
             t1 = tci_read_r(&tb_ptr);
             t2 = tci_read_s32(&tb_ptr);
+            track_write(t1, t2, t0, 32);
             *(uint16_t *)(t1 + t2) = t0;
             break;
         case INDEX_op_st_i32:
             t0 = tci_read_r32(&tb_ptr);
             t1 = tci_read_r(&tb_ptr);
             t2 = tci_read_s32(&tb_ptr);
+            track_write(t1, t2, t0, 32);
             assert(t1 != sp_value || (int32_t)t2 < 0);
             *(uint32_t *)(t1 + t2) = t0;
             break;
@@ -845,6 +1426,7 @@ uintptr_t tcg_qemu_tb_exec(CPUArchState *env, uint8_t *tb_ptr)
             t0 = *tb_ptr++;
             t1 = tci_read_r(&tb_ptr);
             t2 = tci_read_s32(&tb_ptr);
+            track_read(t1, t2, *(uint8_t *)(t1 + t2), 8);
             tci_write_reg8(t0, *(uint8_t *)(t1 + t2));
             break;
         case INDEX_op_ld8s_i64:
@@ -856,42 +1438,49 @@ uintptr_t tcg_qemu_tb_exec(CPUArchState *env, uint8_t *tb_ptr)
             t0 = *tb_ptr++;
             t1 = tci_read_r(&tb_ptr);
             t2 = tci_read_s32(&tb_ptr);
+            track_read(t1, t2, *(uint8_t *)(t1 + t2), 32);
             tci_write_reg32(t0, *(uint32_t *)(t1 + t2));
             break;
         case INDEX_op_ld32s_i64:
             t0 = *tb_ptr++;
             t1 = tci_read_r(&tb_ptr);
             t2 = tci_read_s32(&tb_ptr);
+            track_read(t1, t2, *(uint8_t *)(t1 + t2), 32);
             tci_write_reg32s(t0, *(int32_t *)(t1 + t2));
             break;
         case INDEX_op_ld_i64:
             t0 = *tb_ptr++;
             t1 = tci_read_r(&tb_ptr);
             t2 = tci_read_s32(&tb_ptr);
+            track_read(t1, t2, *(uint8_t *)(t1 + t2), 32);
             tci_write_reg64(t0, *(uint64_t *)(t1 + t2));
             break;
         case INDEX_op_st8_i64:
             t0 = tci_read_r8(&tb_ptr);
             t1 = tci_read_r(&tb_ptr);
             t2 = tci_read_s32(&tb_ptr);
+            track_write(t1, t2, t0, 64);
             *(uint8_t *)(t1 + t2) = t0;
             break;
         case INDEX_op_st16_i64:
             t0 = tci_read_r16(&tb_ptr);
             t1 = tci_read_r(&tb_ptr);
             t2 = tci_read_s32(&tb_ptr);
+            track_write(t1, t2, t0, 64);
             *(uint16_t *)(t1 + t2) = t0;
             break;
         case INDEX_op_st32_i64:
             t0 = tci_read_r32(&tb_ptr);
             t1 = tci_read_r(&tb_ptr);
             t2 = tci_read_s32(&tb_ptr);
+            track_write(t1, t2, t0, 64);
             *(uint32_t *)(t1 + t2) = t0;
             break;
         case INDEX_op_st_i64:
             t0 = tci_read_r64(&tb_ptr);
             t1 = tci_read_r(&tb_ptr);
             t2 = tci_read_s32(&tb_ptr);
+            track_write(t1, t2, t0, 64);
             assert(t1 != sp_value || (int32_t)t2 < 0);
             *(uint64_t *)(t1 + t2) = t0;
             break;
@@ -1251,5 +1840,14 @@ uintptr_t tcg_qemu_tb_exec(CPUArchState *env, uint8_t *tb_ptr)
         assert(tb_ptr == old_code_ptr + op_size);
     }
 exit:
+
+#ifdef QIRA_TRACKING
+    // this fixes the jump instruction merging bug
+    // with the last_pc hack for ARM, might break some x86 reps
+    if (next_tb != 0 && last_pc != tb->pc) {
+      next_tb = 0;
+    }
+#endif
+    last_pc = tb->pc;
     return next_tb;
 }
