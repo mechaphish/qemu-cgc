@@ -135,6 +135,10 @@ endif
 defconfig:
 	rm -f config-all-devices.mak $(SUBDIR_DEVICES_MAK)
 
+debug:
+	$(foreach v, $(V), \ 
+	$(warning $v : $($v)))
+
 ifneq ($(wildcard config-host.mak),)
 include $(SRC_PATH)/Makefile.objs
 endif

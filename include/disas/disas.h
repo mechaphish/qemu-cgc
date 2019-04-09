@@ -6,7 +6,10 @@
 #ifdef NEED_CPU_H
 /* Disassemble this for me please... (debugging). */
 void disas(FILE *out, void *code, unsigned long size);
-void target_disas(FILE *out, CPUArchState *env, target_ulong code,
+void target_disas(FILE *out, CPUState *env, target_ulong code,
+                  target_ulong size, int flags);
+
+void real_target_disas(FILE *out, CPUState *env, target_ulong code,
                   target_ulong size, int flags);
 
 void monitor_disas(Monitor *mon, CPUArchState *env,

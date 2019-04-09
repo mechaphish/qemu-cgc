@@ -200,6 +200,7 @@ endif
 
 install: all
 ifneq ($(PROGS),)
+	$(warning $(PWD))
 	$(call install-prog,$(PROGS),$(DESTDIR)$(bindir))
 endif
 ifdef CONFIG_TRACE_SYSTEMTAP

@@ -1,6 +1,6 @@
 /* General "disassemble this chunk" code.  Used for debugging. */
 #include "config.h"
-#include "disas/bfd.h"
+//#include "disas/bfd.h"
 #include "elf.h"
 #include <errno.h>
 
@@ -195,9 +195,10 @@ static int print_insn_od_target(bfd_vma pc, disassemble_info *info)
            bit 16 indicates little endian.
     other targets - unused
  */
-void target_disas(FILE *out, CPUArchState *env, target_ulong code,
+void real_target_disas(FILE *out, CPUState *env, target_ulong code,
                   target_ulong size, int flags)
 {
+    CPUClass *cc = CPU_GET_CLASS(env);
     target_ulong pc;
     int count;
     CPUDebug s;
@@ -216,6 +217,11 @@ void target_disas(FILE *out, CPUArchState *env, target_ulong code,
 #else
     s.info.endian = BFD_ENDIAN_LITTLE;
 #endif
+
+    if (cc->disas_set_info) {
+        cc->disas_set_info(env, &s.info);
+    }
+
 #if defined(TARGET_I386)
     if (flags == 2) {
         s.info.mach = bfd_mach_x86_64;
@@ -265,7 +271,7 @@ void target_disas(FILE *out, CPUArchState *env, target_ulong code,
         s.info.mach = bfd_mach_ppc;
 #endif
     }
-    s.info.disassembler_options = (char *)"any";
+    s.info.disassembler_options = (char *)"intel";
     print_insn = print_insn_ppc;
 #elif defined(TARGET_M68K)
     print_insn = print_insn_m68k;
