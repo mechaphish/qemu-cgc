@@ -686,49 +686,13 @@ static float64
 }
 
 /*----------------------------------------------------------------------------
-| Returns the fraction bits of the extended double-precision floating-point
-| value `a'.
-*----------------------------------------------------------------------------*/
-
-static inline uint64_t extractFloatx80Frac( floatx80 a )
-{
-
-    return a.low;
-
-}
-
-/*----------------------------------------------------------------------------
-| Returns the exponent bits of the extended double-precision floating-point
-| value `a'.
-*----------------------------------------------------------------------------*/
-
-static inline int32 extractFloatx80Exp( floatx80 a )
-{
-
-    return a.high & 0x7FFF;
-
-}
-
-/*----------------------------------------------------------------------------
-| Returns the sign bit of the extended double-precision floating-point value
-| `a'.
-*----------------------------------------------------------------------------*/
-
-static inline flag extractFloatx80Sign( floatx80 a )
-{
-
-    return a.high>>15;
-
-}
-
-/*----------------------------------------------------------------------------
 | Normalizes the subnormal extended double-precision floating-point value
 | represented by the denormalized significand `aSig'.  The normalized exponent
 | and significand are stored at the locations pointed to by `zExpPtr' and
 | `zSigPtr', respectively.
 *----------------------------------------------------------------------------*/
 
-static void
+void
  normalizeFloatx80Subnormal( uint64_t aSig, int32 *zExpPtr, uint64_t *zSigPtr )
 {
     int8 shiftCount;
@@ -974,10 +938,10 @@ static floatx80 roundAndPackFloatx80(int8 roundingPrecision, flag zSign,
 | normalized.
 *----------------------------------------------------------------------------*/
 
-static floatx80 normalizeRoundAndPackFloatx80(int8 roundingPrecision,
-                                              flag zSign, int32 zExp,
-                                              uint64_t zSig0, uint64_t zSig1,
-                                              float_status *status)
+floatx80 normalizeRoundAndPackFloatx80(int8 roundingPrecision,
+                                       flag zSign, int32 zExp,
+                                       uint64_t zSig0, uint64_t zSig1,
+                                       float_status *status)
 {
     int8 shiftCount;
 
