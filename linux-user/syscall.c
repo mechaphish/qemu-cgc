@@ -800,8 +800,10 @@ static abi_long do_random(abi_ulong buf, abi_long count, abi_ulong p_rnd_out)
             randval = rand() & 0xFFFFu;
         size = ((count - i) < sizeof(randval)) ? (count - i) : sizeof(randval);
         if (size == 1) {
+            qemu_log("RANDOM (%02x, 1)\n", (uint8_t)randval);
             ret = put_user_u8((uint8_t) randval, buf + i);
         } else if (size == 2) {
+            qemu_log("RANDOM (%02x, 2)\n", randval);
             ret = put_user_u16(randval, buf + i);
         } else {
             fprintf(stderr, "qemu: INTERNAL ERROR: I can only write 8 or 16 bits at a time! (asked for %zd)", size);
