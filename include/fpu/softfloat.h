@@ -111,12 +111,12 @@ typedef int64_t int64;
 /*----------------------------------------------------------------------------
 | Software IEC/IEEE floating-point ordering relations
 *----------------------------------------------------------------------------*/
-enum {
+typedef enum {
     float_relation_less      = -1,
     float_relation_equal     =  0,
     float_relation_greater   =  1,
     float_relation_unordered =  2
-};
+} FloatRelation;
 
 /*----------------------------------------------------------------------------
 | Software IEC/IEEE floating-point types.
@@ -187,13 +187,18 @@ enum {
 /*----------------------------------------------------------------------------
 | Software IEC/IEEE floating-point rounding mode.
 *----------------------------------------------------------------------------*/
-enum {
+
+typedef enum __attribute__((__packed__)) {
     float_round_nearest_even = 0,
     float_round_down         = 1,
     float_round_up           = 2,
     float_round_to_zero      = 3,
     float_round_ties_away    = 4,
-};
+    /* Not an IEEE rounding mode: round to closest odd, overflow to max */
+    float_round_to_odd       = 5,
+    /* Not an IEEE rounding mode: round to closest odd, overflow to inf */
+    float_round_to_odd_inf   = 6,
+} FloatRoundMode;
 
 /*----------------------------------------------------------------------------
 | Software IEC/IEEE floating-point exception flags.
@@ -207,6 +212,15 @@ enum {
     float_flag_input_denormal = 64,
     float_flag_output_denormal = 128
 };
+
+/*
+ * Rounding precision for floatx80.
+ */
+typedef enum __attribute__((__packed__)) {
+    floatx80_precision_x,
+    floatx80_precision_d,
+    floatx80_precision_s,
+} FloatX80RoundPrec;
 
 typedef struct float_status {
     signed char float_detect_tininess;
@@ -628,6 +642,7 @@ int floatx80_is_quiet_nan( floatx80 );
 int floatx80_is_signaling_nan( floatx80 );
 floatx80 floatx80_maybe_silence_nan( floatx80 );
 floatx80 floatx80_scalbn(floatx80, int, float_status *status);
+floatx80 floatx80_silence_nan( floatx80 );
 
 static inline floatx80 floatx80_abs(floatx80 a)
 {
@@ -666,6 +681,45 @@ static inline int floatx80_is_any_nan(floatx80 a)
     return ((a.high & 0x7fff) == 0x7fff) && (a.low<<1);
 }
 
+/*----------------------------------------------------------------------------
+| Return whether the given value is an invalid floatx80 encoding.
+| Invalid floatx80 encodings arise when the integer bit is not set, but
+| the exponent is not zero. The only times the integer bit is permitted to
+| be zero is in subnormal numbers and the value zero.
+| This includes what the Intel software developer's manual calls pseudo-NaNs,
+| pseudo-infinities and un-normal numbers. It does not include
+| pseudo-denormals, which must still be correctly handled as inputs even
+| if they are never generated as outputs.
+*----------------------------------------------------------------------------*/
+static inline bool floatx80_invalid_encoding(floatx80 a)
+{
+#if defined(TARGET_M68K)
+    /*-------------------------------------------------------------------------
+    | With m68k, the explicit integer bit can be zero in the case of:
+    | - zeros                (exp == 0, mantissa == 0)
+    | - denormalized numbers (exp == 0, mantissa != 0)
+    | - unnormalized numbers (exp != 0, exp < 0x7FFF)
+    | - infinities           (exp == 0x7FFF, mantissa == 0)
+    | - not-a-numbers        (exp == 0x7FFF, mantissa != 0)
+    |
+    | For infinities and NaNs, the explicit integer bit can be either one or
+    | zero.
+    |
+    | The IEEE 754 standard does not define a zero integer bit. Such a number
+    | is an unnormalized number. Hardware does not directly support
+    | denormalized and unnormalized numbers, but implicitly supports them by
+    | trapping them as unimplemented data types, allowing efficient conversion
+    | in software.
+    |
+    | See "M68000 FAMILY PROGRAMMER’S REFERENCE MANUAL",
+    |     "1.6 FLOATING-POINT DATA TYPES"
+    *------------------------------------------------------------------------*/
+    return false;
+#else
+    return (a.low & (1ULL << 63)) == 0 && (a.high & 0x7FFF) != 0;
+#endif
+}
+
 #define floatx80_zero make_floatx80(0x0000, 0x0000000000000000LL)
 #define floatx80_one make_floatx80(0x3fff, 0x8000000000000000LL)
 #define floatx80_ln2 make_floatx80(0x3ffe, 0xb17217f7d1cf79acLL)
@@ -674,9 +728,69 @@ static inline int floatx80_is_any_nan(floatx80 a)
 #define floatx80_infinity make_floatx80(0x7fff, 0x8000000000000000LL)
 
 /*----------------------------------------------------------------------------
+| Returns the fraction bits of the extended double-precision floating-point
+| value `a'.
+*----------------------------------------------------------------------------*/
+
+inline uint64_t extractFloatx80Frac( floatx80 a )
+{
+
+    return a.low;
+
+}
+
+/*----------------------------------------------------------------------------
+| Returns the exponent bits of the extended double-precision floating-point
+| value `a'.
+*----------------------------------------------------------------------------*/
+
+inline int32 extractFloatx80Exp( floatx80 a )
+{
+
+    return a.high & 0x7FFF;
+
+}
+
+/*----------------------------------------------------------------------------
+| Returns the sign bit of the extended double-precision floating-point value
+| `a'.
+*----------------------------------------------------------------------------*/
+
+inline flag extractFloatx80Sign( floatx80 a )
+{
+
+    return a.high>>15;
+
+}
+
+/*----------------------------------------------------------------------------
+| Takes an abstract floating-point value having sign `zSign', exponent
+| `zExp', and significand formed by the concatenation of `zSig0' and `zSig1',
+| and returns the proper extended double-precision floating-point value
+| corresponding to the abstract input.  This routine is just like
+| `roundAndPackFloatx80' except that the input significand does not have to be
+| normalized.
+*----------------------------------------------------------------------------*/
+
+floatx80 normalizeRoundAndPackFloatx80(int8 roundingPrecision,
+                                              flag zSign, int32 zExp,
+                                              uint64_t zSig0, uint64_t zSig1,
+                                              float_status *status);
+
+/*----------------------------------------------------------------------------
+| Normalizes the subnormal extended double-precision floating-point value
+| represented by the denormalized significand `aSig'.  The normalized exponent
+| and significand are stored at the locations pointed to by `zExpPtr' and
+| `zSigPtr', respectively.
+*----------------------------------------------------------------------------*/
+
+void normalizeFloatx80Subnormal(uint64_t aSig, int32_t *zExpPtr,
+                                uint64_t *zSigPtr);
+
+/*----------------------------------------------------------------------------
 | The pattern for a default generated extended double-precision NaN.
 *----------------------------------------------------------------------------*/
-extern const floatx80 floatx80_default_nan;
+floatx80 floatx80_default_nan(float_status *status);
 
 /*----------------------------------------------------------------------------
 | Software IEC/IEEE quadruple-precision conversion routines.
